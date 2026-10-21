@@ -1,0 +1,4 @@
+tests
+vitest.config.mjs
+*.md
+.env*

@@ -1,0 +1,49 @@
+{
+  "name": "ncc-ams",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run",
+    "migrate": "node --env-file=.env.local scripts/migrate.mjs",
+    "setup-admin": "node --env-file=.env.local firebase/setup.mjs",
+    "check-env": "node --env-file=.env.local scripts/check-env.mjs",
+    "check-env:live": "node --env-file=.env.local scripts/check-env.mjs --live",
+    "check-layout": "node --env-file=.env.local scripts/check-layout.mjs",
+    "test-cloudinary": "node --env-file=.env.local scripts/test-cloudinary.mjs"
+  },
+  "dependencies": {
+    "@googleapis/sheets": "^18.1.1",
+    "@vercel/functions": "^3.9.11",
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.2.0",
+    "exceljs": "^4.4.0",
+    "firebase-admin": "^12.1.0",
+    "jose": "^5.2.0",
+    "lucide-react": "^1.59.0",
+    "next": "^14.2.35",
+    "nodemailer": "^6.9.8",
+    "pdfkit": "^0.15.0",
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "esbuild": "^0.28.2",
+    "eslint": "^8",
+    "eslint-config-next": "^14.2.35",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^30.1.2",
+    "playwright": "^1.64.1",
+    "vitest": "^5.0.4"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "description": "AMS — attendance system for NCC AIRWING FLIGHT-B, 6 KAR AIR SQN NCC"
+}

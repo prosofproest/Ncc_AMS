@@ -1,0 +1,16 @@
+{
+  "name": "NCC AIRWING FLIGHT-B Attendance",
+  "short_name": "NCC AMS",
+  "description": "AMS — NCC Airwing Flight-B, 6 KAR AIR SQN NCC",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#E8EFFC",
+  "theme_color": "#0B2A5B",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "categories": ["education", "productivity"],
+  "screenshots": []
+}
