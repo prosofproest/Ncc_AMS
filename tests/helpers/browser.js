@@ -1,6 +1,5 @@
 // Runs the real UI inside jsdom and routes every fetch() to the real API route handlers
 // (backed by the in-memory database), with a proper cookie jar — so screens are tested end to end.
-import 'fake-indexeddb/auto';
 import { TextEncoder as NodeTextEncoder } from 'node:util';
 
 import * as loginR from '@/app/api/auth/login/route';
@@ -47,8 +46,33 @@ export function installBrowser() {
     if (!mod) throw new Error(`UI called an API that does not exist: ${method} ${url.pathname}`);
     const handler = mod[method];
     if (!handler) throw new Error(`UI used ${method} on ${url.pathname} which is not implemented`);
-    const headers = new Headers(init.headers || {}); if (jar.cookie) headers.set('cookie', jar.cookie);
-    const req = new Request(url.href, { method, headers, body: method === 'GET' ? undefined : init.body });
+    const headers = new Headers(init.headers || {});
+    const tabId = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ncc_tab')) || 'test-tab-id-default';
+    if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem('ncc_tab')) {
+      sessionStorage.setItem('ncc_tab', tabId);
+    }
+
+    if (jar.cookie) {
+      headers.set('cookie', jar.cookie);
+    }
+    if ((jar.cookie || headers.has('cookie')) && !headers.has('x-tab-id')) {
+      headers.set('x-tab-id', tabId);
+    }
+
+    let reqBody = method === 'GET' ? undefined : init.body;
+    if (['/api/auth/login', '/api/auth/verify-otp', '/api/auth/resend-otp'].includes(url.pathname)) {
+      if (typeof reqBody === 'string') {
+        try {
+          const parsed = JSON.parse(reqBody);
+          if (parsed && typeof parsed === 'object' && !('tabId' in parsed) && !parsed.omitTabId) {
+            parsed.tabId = tabId;
+            reqBody = JSON.stringify(parsed);
+          }
+        } catch {}
+      }
+    }
+
+    const req = new Request(url.href, { method, headers, body: reqBody });
     let res;
     try { res = await handler(req, params ? { params } : undefined); } catch (e) { console.error('API HANDLER THREW', method, url.pathname, e); throw e; }
     const sc = res.headers.get('set-cookie');
@@ -58,6 +82,17 @@ export function installBrowser() {
   };
   window.matchMedia ||= () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   window.scrollTo = () => {};
+  if (typeof Storage !== 'undefined' && Storage.prototype) {
+    const origClear = Storage.prototype.clear;
+    Storage.prototype.clear = function () {
+      const isSession = (typeof sessionStorage !== 'undefined' && this === sessionStorage);
+      const tab = isSession ? this.getItem('ncc_tab') : null;
+      origClear.call(this);
+      if (isSession && tab && jar.cookie) {
+        this.setItem('ncc_tab', tab);
+      }
+    };
+  }
   URL.createObjectURL = () => 'blob:test'; URL.revokeObjectURL = () => {};
   const speech = []; window.speechSynthesis = { speak: u => speech.push(u.text), cancel() {}, getVoices: () => [{ name: 'Microsoft Neerja Online (Natural)', lang: 'en-IN' }, { name: 'Robot', lang: 'en-US' }], onvoiceschanged: null };
   window.SpeechSynthesisUtterance = function (t) { this.text = t; };

@@ -353,38 +353,39 @@ describe('4. marking attendance (years 1 & 2)', () => {
 });
 
 describe('5. Sir / Admin edits a submitted session (logged + mailed)', () => {
-  it('rejects bad edits', async () => {
-    const e = (changes, sessionId = state.session1) => call(attR.PUT, { method: 'PUT', cookie: state.cto, body: { sessionId, changes } });
+  it('rejects bad edits and non-admin edits', async () => {
+    expect((await call(attR.PUT, { method: 'PUT', cookie: state.cto, body: { sessionId: state.session1, changes: [att('Priya Nair', 'Present')] } })).status).toBe(403);
+    const e = (changes, sessionId = state.session1) => call(attR.PUT, { method: 'PUT', cookie: state.admin, body: { sessionId, changes } });
     expect((await e([att('Priya Nair', 'Absent', '')])).json.error).toMatch(/reason/i);
     expect((await e([att('Vivek Pai', 'Absent', 'Late arrival')])).status).toBe(400);        // belongs to the other session
     expect((await e([att('Priya Nair', 'Present')], 'nope')).status).toBe(404);
   });
-  it('CTO edits: Priya Absent→Present, Karthik Present→Absent; unchanged rows are ignored', async () => {
+  it('Admin edits: Priya Absent→Present, Karthik Present→Absent; unchanged rows are ignored', async () => {
     globalThis.__mail.length = 0;
     const r = await call(attR.PUT, {
-      method: 'PUT', cookie: state.cto, body: {
+      method: 'PUT', cookie: state.admin, body: {
         sessionId: state.session1, note: 'Corrected after roll call',
         changes: [att('Priya Nair', 'Present'), att('Karthik Bhat', 'Absent', 'Late arrival'), att('Rahul Shetty', 'Absent', 'Family function')]
       }
     });
     expect(r.status).toBe(200); expect(r.json.changed).toBe(2);
     const sess = (await db.collection('sessions').doc(state.session1).get()).data();
-    expect(sess).toMatchObject({ present: 3, absent: 3, lastEditedByName: 'Lt. Sir' });
+    expect(sess).toMatchObject({ present: 3, absent: 3, lastEditedByName: 'Admin Officer' });
     expect(userByName('Priya Nair').stats).toMatchObject({ total: 1, present: 1, absent: 0 });
     expect(userByName('Karthik Bhat').stats).toMatchObject({ total: 1, present: 0, absent: 1 });
     expect(userByName('Rahul Shetty').stats).toMatchObject({ total: 1, present: 0, absent: 1 });   // untouched
     const rec = (await db.collection('attendance').doc(`${TODAY}_${userByName('Karthik Bhat').id}`).get()).data();
-    expect(rec).toMatchObject({ status: 'Absent', reason: 'Late arrival', editedByName: 'Lt. Sir' });
+    expect(rec).toMatchObject({ status: 'Absent', reason: 'Late arrival', editedByName: 'Admin Officer' });
     const audit = db.all('audit_log').map(a => a.data).find(a => a.type === 'edit');
     expect(audit.changes.map(c => [c.name, c.from, c.to])).toEqual([['Priya Nair', 'Absent (Sick / Medical)', 'Present'], ['Karthik Bhat', 'Present', 'Absent']]);
-    expect(audit.byName).toBe('Lt. Sir');
+    expect(audit.byName).toBe('Admin Officer');
   });
   it('mail: change-log with corrected parade PDF → Sir + backup; absence notice only to the newly absent cadet', async () => {
     await flushBg();
     const cl = globalThis.__mail.filter(m => /Attendance edited/.test(m.subject));
     expect(cl.length).toBe(1);
     expect(cl[0].to).toBe('sir@test.in, backup@test.in');
-    expect(cl[0].html).toContain('Priya Nair'); expect(cl[0].html).toContain('Karthik Bhat'); expect(cl[0].html).toContain('Lt. Sir'); expect(cl[0].html).toContain('Corrected after roll call');
+    expect(cl[0].html).toContain('Priya Nair'); expect(cl[0].html).toContain('Karthik Bhat'); expect(cl[0].html).toContain('Admin Officer'); expect(cl[0].html).toContain('Corrected after roll call');
     expect(cl[0].attachments[0].content.subarray(0, 5).toString()).toBe('%PDF-');
     expect(cl[0].attachments[0].filename).toMatch(/CORRECTED_Parade_Report/);
     const ab = globalThis.__mail.filter(m => /Absence notice/.test(m.subject));
@@ -607,7 +608,8 @@ describe('9. promotion — attendance restarts from 0 with new sheets', () => {
   });
   it('editing/deleting an OLD-cycle session never disturbs the new cycle counters', async () => {
     const before = JSON.stringify(userByName('Rahul Shetty').stats);
-    const e = await call(attR.PUT, { method: 'PUT', cookie: state.cto, body: { sessionId: state.session1, changes: [att('Rahul Shetty', 'Present')] } });
+    expect((await call(attR.PUT, { method: 'PUT', cookie: state.cto, body: { sessionId: state.session1, changes: [att('Rahul Shetty', 'Present')] } })).status).toBe(403);
+    const e = await call(attR.PUT, { method: 'PUT', cookie: state.admin, body: { sessionId: state.session1, changes: [att('Rahul Shetty', 'Present')] } });
     expect(e.status).toBe(200); await flushBg();
     expect(JSON.stringify(userByName('Rahul Shetty').stats)).toBe(before);
     const d = await call(attR.DELETE, { method: 'DELETE', cookie: state.admin, url: `/api/attendance?sessionId=${state.session2}` });
@@ -725,20 +727,23 @@ describe('11. approval workflow — reject, edit while pending, admin / CTO taki
 
   it('editing a pending roll: the editor\'s side counts as approved, the other side must approve again', async () => {
     const id = state.keepPending;
-    await approve(state.admin, id);                                                           // admin approved…
-    const e = await call(apprR.PUT, { method: 'PUT', cookie: state.cto, body: { id, note: 'He was late', changes: [att('Arjun Sharma', 'Absent', 'Late arrival')] } });
+    await approve(state.cto, id);                                                           // CTO approved…
+    const ctoAttempt = await call(apprR.PUT, { method: 'PUT', cookie: state.cto, body: { id, note: 'He was late', changes: [att('Arjun Sharma', 'Absent', 'Late arrival')] } });
+    expect(ctoAttempt.status).toBe(403);
+    expect(ctoAttempt.json.error).toBe('Only the Administrator can correct attendance. You can approve or reject.');
+    const e = await call(apprR.PUT, { method: 'PUT', cookie: state.admin, body: { id, note: 'He was late', changes: [att('Arjun Sharma', 'Absent', 'Late arrival')] } });
     expect(e.json).toMatchObject({ success: true, changed: 1 });
     const doc = (await db.collection('pending_sessions').doc(id).get()).data();
     expect(doc.records[0]).toMatchObject({ status: 'Absent', reason: 'Late arrival' });
-    expect(doc).toMatchObject({ present: 0, absent: 1, waitingFor: ['admin'] });
-    expect(Object.keys(doc.approvals)).toEqual(['cto']);                                      // admin's earlier approval was reset
-    expect((await call(apprR.PUT, { method: 'PUT', cookie: state.cto, body: { id, changes: [att('Arjun Sharma', 'Absent', '')] } })).status).toBe(400);   // reason needed
+    expect(doc).toMatchObject({ present: 0, absent: 1, waitingFor: ['cto'] });
+    expect(Object.keys(doc.approvals)).toEqual(['admin']);                                      // CTO's earlier approval was reset
+    expect((await call(apprR.PUT, { method: 'PUT', cookie: state.admin, body: { id, changes: [att('Arjun Sharma', 'Absent', '')] } })).status).toBe(400);   // reason needed
     expect((await call(apprR.PUT, { method: 'PUT', cookie: state.marker, body: { id, changes: [att('Arjun Sharma', 'Present')] } })).status).toBe(403);
     expect(db.all('audit_log').some(a => a.data.type === 'pending-edit' && a.data.changes[0].to === 'Absent')).toBe(true);
-    const fin = await approve(state.admin, id);
+    const fin = await approve(state.cto, id);
     expect(fin.json.final).toBe(true); await flushBg();
     expect(userByName('Arjun Sharma').stats).toMatchObject({ total: 2, present: 1, absent: 1 });
-    expect((await call(apprR.PUT, { method: 'PUT', cookie: state.cto, body: { id, changes: [att('Arjun Sharma', 'Present')] } })).status).toBe(404);   // finalised: use the normal edit
+    expect((await call(apprR.PUT, { method: 'PUT', cookie: state.admin, body: { id, changes: [att('Arjun Sharma', 'Present')] } })).status).toBe(404);   // finalised: use the normal edit
   });
 
   it('Admin or CTO taking attendance: their own side is approved on submit, the other side is still required', async () => {

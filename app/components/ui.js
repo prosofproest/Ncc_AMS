@@ -1,16 +1,31 @@
 'use client';
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { Icon } from '@/app/components/Icon';
+import { tabHeaders, clearTab } from '@/lib/tab';
 
 // ── network helpers ───────────────────────────────────────────────────────────
-export async function api(url, { method = 'GET', body } = {}) {
+export async function api(url, { method = 'GET', body, headers = {} } = {}) {
   try {
-    const r = await fetch(url, { method, cache: 'no-store', headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
-    if (r.status === 401 && !url.startsWith('/api/auth')) {
-      if (typeof window !== 'undefined' && !location.pathname.startsWith('/login')) location.href = '/login';
-      return { ok: false, status: 401, error: 'Session expired. Please sign in again.' };
-    }
+    const combinedHeaders = {
+      ...tabHeaders(),
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...headers,
+    };
+    const r = await fetch(url, { method, cache: 'no-store', headers: combinedHeaders, body: body ? JSON.stringify(body) : undefined });
     const data = (r.headers.get('content-type') || '').includes('json') ? await r.json().catch(() => null) : null;
+    if (r.status === 401 && !url.startsWith('/api/auth/login') && !url.startsWith('/api/auth/verify-otp') && !url.startsWith('/api/auth/resend-otp')) {
+      if (typeof window !== 'undefined' && !location.pathname.startsWith('/login')) {
+        let reason = 'expired';
+        if (data?.code === 'TAB') {
+          reason = sessionStorage.getItem('ncc_has_session') ? 'other-tab' : 'tab';
+        } else if (data?.code === 'TIMEOUT') {
+          reason = 'timeout';
+        }
+        clearTab();
+        location.href = `/login?reason=${reason}`;
+      }
+      return { ok: false, status: 401, data, error: data?.error || 'Session expired. Please sign in again.' };
+    }
     return { ok: r.ok, status: r.status, data, error: r.ok ? null : (data?.error || `Something went wrong (${r.status}).`) };
   } catch {
     return { ok: false, status: 0, network: true, error: 'No connection. Check your internet and try again.' };
@@ -20,7 +35,21 @@ export async function api(url, { method = 'GET', body } = {}) {
 // Download a generated report (PDF / Excel / CSV). Errors from the server are shown, not saved as files.
 export async function download(url) {
   try {
-    const r = await fetch(url, { cache: 'no-store' });
+    const r = await fetch(url, { cache: 'no-store', headers: { ...tabHeaders() } });
+    if (r.status === 401) {
+      const j = (r.headers.get('content-type') || '').includes('json') ? await r.json().catch(() => null) : null;
+      if (typeof window !== 'undefined' && !location.pathname.startsWith('/login')) {
+        let reason = 'expired';
+        if (j?.code === 'TAB') {
+          reason = sessionStorage.getItem('ncc_has_session') ? 'other-tab' : 'tab';
+        } else if (j?.code === 'TIMEOUT') {
+          reason = 'timeout';
+        }
+        clearTab();
+        location.href = `/login?reason=${reason}`;
+      }
+      return { ok: false, error: j?.error || 'Session expired. Please sign in again.' };
+    }
     if (!r.ok) { const j = await r.json().catch(() => null); return { ok: false, error: j?.error || `Could not create the report (${r.status}).` }; }
     const blob = await r.blob();
     const name = (r.headers.get('content-disposition') || '').match(/filename="?([^"]+)"?/)?.[1] || 'report';

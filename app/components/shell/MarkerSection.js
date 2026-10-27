@@ -44,7 +44,12 @@ export default function MarkerSection({ section }) {
           who="marker"
         />
       ) : (
-        <History />
+        <History
+          onMark={() => {
+            setActiveSec('mark');
+            router.push('/dashboard/marker/mark');
+          }}
+        />
       )}
     </>
   );
@@ -61,7 +66,8 @@ function Stage({ s }) {
   );
 }
 
-function History() {
+function History({ onMark }) {
+  const router = useRouter();
   const { toast } = useUI();
   const { data, loading } = useRealtimeData('/api/attendance?history=1', 10000);
   const { data: mine } = useRealtimeData('/api/approvals?mine=1', 8000);
@@ -100,7 +106,22 @@ function History() {
                   </div>
                 )}
               </div>
-              <Stage s={w} />
+              <div className="row gap-s wrap" style={{ alignItems: 'center' }}>
+                {w.state === 'rejected' && (
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={() => {
+                      sessionStorage.setItem('ncc_resubmit', w.id);
+                      if (onMark) onMark();
+                      else router.push('/dashboard/marker/mark');
+                    }}
+                  >
+                    Correct and resubmit
+                  </button>
+                )}
+                <Stage s={w} />
+              </div>
             </div>
           ))}
         </div>

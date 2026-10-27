@@ -246,7 +246,7 @@ describe('Sir (CTO), cadet and shared pages', () => {
     await screen.findByRole('heading', { name: /Overview/ });
     const mainNav = await screen.findByRole('navigation', { name: /Main/i });
     const names = within(mainNav).getAllByRole('link').map(l => l.querySelector('.nav-label')?.textContent || l.textContent.trim());
-    expect(names).toEqual(['Overview', 'Approvals', 'Mark attendance', 'Records', 'Cadets', 'Reports', 'Benefits', 'Google Sheet', 'Change log']);
+    expect(names).toEqual(['Overview', 'Approvals', 'Mark attendance', 'Records', 'Cadets', 'Reports', 'Benefits', 'Change log']);
     expect(env.speech.length).toBe(0);                                                         // no voice for Sir
     await navLink(u, 'Cadets'); await screen.findByText('Arjun Sharma'); expect(screen.queryByRole('button', { name: /Add account/ })).toBeNull(); expect(screen.queryAllByRole('switch').length).toBe(0);
   });

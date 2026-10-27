@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 import { Icon } from '@/app/components/Icon';
 import { navFor, isItemActive } from './nav';
 
-export function BottomBar({ user, needsMe = 0, onOpenDrawer }) {
+export function BottomBar({ user, needsMe = 0, onOpenDrawer, navPending, onNavigate }) {
   const pathname = usePathname();
   const groups = navFor(user, needsMe);
   const primaryItems = groups.flatMap(g => g.items).filter(i => i.primary);
@@ -12,13 +12,14 @@ export function BottomBar({ user, needsMe = 0, onOpenDrawer }) {
   return (
     <nav className="mobile-bottom-bar" aria-label="Quick navigation">
       {primaryItems.map((item) => {
-        const active = isItemActive(pathname, item.href);
+        const active = isItemActive(navPending || pathname, item.href);
         return (
           <Link
             key={item.id}
             href={item.href}
             className={`mobile-bottom-item ${active ? 'active' : ''}`}
             aria-current={active ? 'page' : undefined}
+            onClick={() => onNavigate?.(item.href)}
           >
             <span style={{ position: 'relative', display: 'flex' }}>
               <Icon name={item.icon} size={18} />

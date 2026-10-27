@@ -116,6 +116,25 @@ export async function POST(request) {
     rows.push({ u, status, reason });
   }
 
+  const resubmitOf = body.resubmit_of ? String(body.resubmit_of) : null;
+  let previousRejection = null;
+  if (resubmitOf) {
+    const oldSnap = await db.collection(Collections.PENDING).doc(resubmitOf).get();
+    if (!oldSnap.exists) return NextResponse.json({ error: 'Rejected submission not found.' }, { status: 400 });
+    const oldDoc = oldSnap.data();
+    if (oldDoc.markedBy !== payload.id) return NextResponse.json({ error: 'You can only resubmit attendance that was marked by you.' }, { status: 403 });
+    if (oldDoc.state === 'resubmitted') return NextResponse.json({ error: 'This submission has already been resubmitted.' }, { status: 400 });
+    if (oldDoc.state !== 'rejected') return NextResponse.json({ error: 'Only rejected submissions can be resubmitted.' }, { status: 400 });
+    if (oldDoc.rejection) {
+      previousRejection = {
+        byName: oldDoc.rejection.byName || '',
+        side: oldDoc.rejection.side || '',
+        reason: oldDoc.rejection.reason || '',
+        at: oldDoc.rejection.at || '',
+      };
+    }
+  }
+
   // Duplicate-day protection: attendance is locked once submitted — saved or still waiting for approval
   const attRefs = rows.map(x => db.collection(Collections.ATTENDANCE).doc(recId(date, x.u.id, settings.currentCycle)));
   const [existing, pend] = await Promise.all([db.getAll(...attRefs).then(l => l.filter(s => s.exists)), pendingCoverage(date)]);
@@ -133,9 +152,28 @@ export async function POST(request) {
 
   const photoUrls = (Array.isArray(body.photo_urls) ? body.photo_urls : []).filter(u => typeof u === 'string' && /^https:\/\//.test(u)).slice(0, 8);
   const photosRequired = settings.requirePhotos !== false;
-  const sub = await createPending({ payload, date, cycle: settings.currentCycle, activity, description, years, rows, photoUrls, geoLat, geoLng, isHistorical, groupLabel: groupLabel(years), photosRequired });
+  const sub = await createPending({ payload, date, cycle: settings.currentCycle, activity, description, years, rows, photoUrls, geoLat, geoLng, isHistorical, groupLabel: groupLabel(years), photosRequired, resubmitOf, previousRejection });
 
+  if (sub.conflictError) return NextResponse.json({ error: sub.conflictError }, { status: 400 });
   if (sub.conflict) return NextResponse.json({ error: `Attendance for ${sub.count} of these cadets on ${date} was just submitted by someone else and is waiting for approval. It is locked.`, locked: true, existing: sub.count }, { status: 409 });
+
+  if (resubmitOf) {
+    const now = new Date().toISOString();
+    runInBackground(async () => {
+      await timed('sheets:resubmit', async () => {
+        return sheets.appendChangeLog([{
+          at: now,
+          action: 'Resubmitted',
+          by: payload.name,
+          date,
+          name: `${activity} - ${groupLabel(years)}`,
+          from: 'Rejected',
+          to: 'Pending',
+          reason: '',
+        }]);
+      }, () => `${activity} - ${groupLabel(years)}`);
+    });
+  }
 
   // Nothing is counted, saved to the sheet or e-mailed yet — that happens when BOTH Admin and CTO approve.
   const side = approverSide(payload);

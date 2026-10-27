@@ -7,7 +7,7 @@ Next.js 14 · Firebase (Firestore) · Cloudinary · Google Sheets · Gmail SMTP 
 | Area | How it works |
 |---|---|
 | **Sign-in** | Username (or Reg. No.) + password. Optional **2-step email OTP** — switched on/off per account by the Admin at any time. 5 wrong passwords lock the account for 15 min. |
-| **Marking** | Cadet marker picks date, activity and **any combination of years** (1, 2, 3, 1&2, 2&3, 1&3, All), taps **P / A**. Absent → reason dropdown (Admin-editable) or typed "Other". Photos from **camera or gallery**, GPS for live parades, works **offline** (sent when the app is next open). |
+| **Marking** | Cadet marker picks date, activity and **any combination of years** (1, 2, 3, 1&2, 2&3, 1&3, All), taps **P / A**. Absent → reason dropdown (Admin-editable) or typed "Other". Photos from **camera or gallery**, GPS for live parades. |
 | **Approval** | A submission is **locked and pending**. It is saved, counted, written to the sheet and e-mailed **only after BOTH the Admin and the CTO approve** (Approvals tab, live counter, review + correct + approve / reject with reason). If the Admin or CTO takes attendance themselves, their own side is approved automatically — the other side is still needed. Promotion is blocked while anything is pending. |
 | **Lock** | Once submitted, attendance is locked for the marker. Only Admin / CTO can edit it (before or after approval); every edit is logged and e-mailed with a corrected PDF. |
 | **E-mails** | (after approval) Parade report (+ **PDF**, with the approval record) → Sir + backup · absence notice → each absent cadet (if an email is in the sheet) · change log → Sir + backup · monthly + weekly summary (+ PDF). All in the same glass theme. |
@@ -86,5 +86,6 @@ Fix every ❌ before continuing. (The file must be named `.env.local` and sit ne
 * Only **Present / Absent** exist. Old "Leave" records are converted to Absent with the old remark as the reason.
 * A cadet with no valid e-mail simply receives no absence mail.
 * Cadets removed from the sheet are **deactivated, never deleted** (history stays).
-* Offline marking: the phone stores the attendance (and photos) and sends them the next time the app is **open** with internet. Until then the app shows "saved on this phone".
-* `npm test` runs 117 automated checks (API simulation with fake Firebase / Sheets / SMTP, plus the real screens in a simulated browser).
+* Marker session lifetime: defaults to 30 minutes (configurable via `MARKER_SESSION_MINUTES` environment variable); all other roles have an 8-hour session.
+* `npm test` runs automated checks (API simulation with fake Firebase / Sheets / SMTP, plus the real screens in a simulated browser).
+

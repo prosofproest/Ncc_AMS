@@ -6,6 +6,7 @@ import { authenticate } from '@/lib/session';
 import { runInBackground } from '@/lib/bg';
 import { approve, reject, editPending, approverSide, approvalCounts, listByState, summaryOf } from '@/lib/approvals';
 import { afterFinalApproval } from '@/lib/approvals';
+import { auditEntry } from '@/lib/attendance';
 
 // GET  /api/approvals?summary=1           -> { pending, needsMe }        (polled; admin + CTO)
 // GET  /api/approvals?state=pending|rejected -> list without rosters     (admin + CTO)
@@ -68,3 +69,41 @@ export async function PUT(request) {
   const r = await editPending(String(body.id || ''), payload, Array.isArray(body.changes) ? body.changes : [], body.note);
   return NextResponse.json(r.ok ? { success: true, changed: r.changed } : { error: r.error }, { status: r.status });
 }
+
+// DELETE /api/approvals?id=<id> or body: { id } — Administrator deletes a rejected/resubmitted submission
+export async function DELETE(request) {
+  const { payload, error } = await authenticate(request);
+  if (error) return error;
+  if (payload.role !== 'admin') {
+    return NextResponse.json({ error: 'Only the Administrator can delete rejected submissions.' }, { status: 403 });
+  }
+
+  const sp = new URL(request.url).searchParams;
+  let id = sp.get('id');
+  if (!id) {
+    const body = await request.json().catch(() => ({}));
+    id = body.id;
+  }
+  if (!id) return NextResponse.json({ error: 'id required.' }, { status: 400 });
+
+  const ref = db.collection(Collections.PENDING).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+
+  const data = snap.data();
+  if (data.state !== 'rejected' && data.state !== 'resubmitted') {
+    return NextResponse.json({ error: 'Only rejected or resubmitted submissions can be deleted.' }, { status: 409 });
+  }
+
+  await ref.delete();
+
+  await db.collection(Collections.AUDIT_LOG).add(auditEntry({
+    type: 'delete-rejected',
+    payload,
+    session: { id, date: data.date, activityType: data.activityType, groupLabel: data.groupLabel },
+    note: `Deleted rejected submission: ${data.date} ${data.activityType || ''} (${data.groupLabel || ''})`,
+  }));
+
+  return NextResponse.json({ success: true, id });
+}
+

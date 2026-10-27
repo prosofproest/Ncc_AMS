@@ -13,6 +13,7 @@
     "check-env": "node --env-file=.env.local scripts/check-env.mjs",
     "check-env:live": "node --env-file=.env.local scripts/check-env.mjs --live",
     "check-layout": "node --env-file=.env.local scripts/check-layout.mjs",
+    "check-nav": "node --env-file=.env.local scripts/check-nav.mjs",
     "test-cloudinary": "node --env-file=.env.local scripts/test-cloudinary.mjs"
   },
   "dependencies": {
@@ -37,7 +38,6 @@
     "esbuild": "^0.28.2",
     "eslint": "^8",
     "eslint-config-next": "^14.2.35",
-    "fake-indexeddb": "^6.2.5",
     "jsdom": "^30.1.2",
     "playwright": "^1.64.1",
     "vitest": "^5.0.4"

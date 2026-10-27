@@ -1,14 +1,40 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { UIProvider, api, Spinner } from '@/app/components/ui';
 import { Icon } from '@/app/components/Icon';
 import { BrandMark } from '@/app/components/BrandMark';
+import { getTabId } from '@/lib/tab';
 
-export default function LoginPage() { return <UIProvider><Login /></UIProvider>; }
+export default function LoginPage() {
+  return (
+    <UIProvider>
+      <Suspense fallback={null}>
+        <Login />
+      </Suspense>
+    </UIProvider>
+  );
+}
+
+const REASONS = {
+  tab: 'Your session ended because the page was closed or opened in another tab. Please sign in again.',
+  timeout: 'Your session ended after 30 minutes. Please sign in again.',
+  expired: 'Your session expired. Please sign in again.',
+  'other-tab': 'You signed in from another tab, so this one was signed out.',
+};
+
+function getReasonParam() {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('reason');
+}
 
 function Login() {
   const router = useRouter();
+  const [reasonMsg, setReasonMsg] = useState(() => {
+    const q = getReasonParam();
+    return q && REASONS[q.toLowerCase()] ? REASONS[q.toLowerCase()] : '';
+  });
+
   const [step, setStep] = useState('creds');            // creds -> otp
   const [id, setId] = useState(''); const [pw, setPw] = useState(''); const [showPw, setShowPw] = useState(false);
   const [code, setCode] = useState('');
@@ -18,15 +44,38 @@ function Login() {
   const [err, setErr] = useState(''); const [info, setInfo] = useState(''); const [busy, setBusy] = useState(false);
   const codeRef = useRef(null);
 
-  useEffect(() => { api('/api/me').then(r => { if (r.ok && r.data?.user) router.replace(r.data.user.dashboardPath || '/dashboard/cadet'); }); }, [router]);
+  useEffect(() => {
+    getTabId();
+    const q = getReasonParam();
+    if (q && REASONS[q.toLowerCase()]) {
+      setReasonMsg(REASONS[q.toLowerCase()]);
+    }
+  }, []);
+
+  useEffect(() => {
+    // If arriving without an explicit session termination reason, check if already signed in
+    const q = getReasonParam();
+    if (!q) {
+      api('/api/me').then(r => {
+        if (r.ok && r.data?.user) router.replace(r.data.user.dashboardPath || '/dashboard/cadet');
+      });
+    }
+  }, [router]);
+
   useEffect(() => { if (step !== 'otp') return; const t = setInterval(() => { setLeft(s => Math.max(0, s - 1)); setCool(s => Math.max(0, s - 1)); }, 1000); return () => clearInterval(t); }, [step]);
   useEffect(() => { if (step === 'otp') setTimeout(() => codeRef.current?.focus(), 80); }, [step]);
 
-  const finish = d => router.replace(d.mustChangePassword ? '/change-password' : d.dashboardPath);
+  const finish = d => {
+    try {
+      sessionStorage.setItem('ncc_has_session', '1');
+    } catch {}
+    router.replace(d.mustChangePassword ? '/change-password' : d.dashboardPath);
+  };
 
   async function submitCreds(e) {
     e.preventDefault(); if (busy) return; setErr(''); setInfo(''); setBusy(true);
-    const r = await api('/api/auth/login', { method: 'POST', body: { identifier: id.trim(), password: pw } });
+    const tabId = getTabId();
+    const r = await api('/api/auth/login', { method: 'POST', body: { identifier: id.trim(), password: pw, tabId } });
     setBusy(false);
     if (!r.ok) return setErr(r.error);
     if (r.data.otpRequired) { setChallenge({ id: r.data.challengeId, hint: r.data.emailHint }); setLeft(r.data.expiresInSec); setCool(30); setCode(''); setStep('otp'); return; }
@@ -34,14 +83,16 @@ function Login() {
   }
   async function submitOtp(e, value = code) {
     e?.preventDefault(); if (busy || value.length !== 6) return; setErr(''); setBusy(true);
-    const r = await api('/api/auth/verify-otp', { method: 'POST', body: { challengeId: challenge.id, code: value } });
+    const tabId = getTabId();
+    const r = await api('/api/auth/verify-otp', { method: 'POST', body: { challengeId: challenge.id, code: value, tabId } });
     setBusy(false);
     if (!r.ok) { setErr(r.error); setCode(''); if (r.data?.restart) backToCreds(); else codeRef.current?.focus(); return; }
     finish(r.data);
   }
   async function resend() {
     if (cool > 0 || busy) return; setErr(''); setInfo(''); setBusy(true);
-    const r = await api('/api/auth/resend-otp', { method: 'POST', body: { challengeId: challenge.id } });
+    const tabId = getTabId();
+    const r = await api('/api/auth/resend-otp', { method: 'POST', body: { challengeId: challenge.id, tabId } });
     setBusy(false);
     if (!r.ok) { setErr(r.error); if (r.data?.restart) backToCreds(); return; }
     setLeft(r.data.expiresInSec); setCool(30); setInfo(`A new code was sent to ${r.data.emailHint}.`);
@@ -63,6 +114,12 @@ function Login() {
         </div>
 
         <div className="card" style={{ padding: 20 }}>
+          {reasonMsg && (
+            <div className="banner info mb" role="status">
+              <Icon name="info" size={16} /> {reasonMsg}
+            </div>
+          )}
+
           {step === 'creds' ? (
             <form onSubmit={submitCreds} className="col" style={{ gap: 14 }}>
               <div><h2 className="h2">Sign in</h2><p className="muted small">Use your e-mail, username or regimental number.</p></div>

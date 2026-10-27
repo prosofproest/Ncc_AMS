@@ -110,7 +110,7 @@ describe('Shell & Navigation Architecture', () => {
     const ctoUser = { role: 'cto', permissions: DEFAULT_PERMISSIONS.cto };
     const ctoGroups = navFor(ctoUser);
     const ctoItems = ctoGroups.flatMap(g => g.items);
-    expect(ctoItems.length).toBe(9);
+    expect(ctoItems.length).toBe(8);
     for (const item of ctoItems) {
       expect(adminItems.some(ai => ai.id === item.id)).toBe(true);
     }

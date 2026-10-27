@@ -863,3 +863,24 @@ textarea.input { min-height: 80px; height: auto; resize: vertical; padding: 10px
   }
 }
 
+/* ── Top Navigation Progress Bar ─────────────────────────────────────────── */
+.nav-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: var(--accent, #0A66D6);
+  z-index: 99999;
+  pointer-events: none;
+  animation: navProgress 1.5s ease-in-out infinite;
+  transform-origin: 0% 50%;
+}
+
+@keyframes navProgress {
+  0% { transform: scaleX(0.1); opacity: 0.8; }
+  50% { transform: scaleX(0.75); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0.9; }
+}
+
+

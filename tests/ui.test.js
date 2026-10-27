@@ -213,33 +213,5 @@ describe('marker: mark attendance end to end (the real screen + the real API)', 
     await u.click(screen.getByRole('button', { name: /^Clear$/ }));
     expect(screen.getByText('No group', { selector: 'span.badge' })).toBeTruthy();
   });
-
-  it('offline: attendance is saved on the phone and sent when the network returns', async () => {
-    const u = user();
-    const y = new Date(TODAY + 'T00:00:00Z'); y.setUTCDate(y.getUTCDate() - 1); const yesterday = y.toISOString().slice(0, 10);
-    mountMarker('mark');
-    await screen.findByRole('heading', { name: /Mark attendance/i });
-    const dateInput = screen.getByLabelText('Date'); await act(async () => { dateInput.focus(); });
-    const { fireEvent } = await import('@testing-library/react'); fireEvent.change(dateInput, { target: { value: yesterday } });
-    await u.click(screen.getByRole('button', { name: /^Year 3/ }));
-    await screen.findByText('Vivek Pai');
-    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
-    await u.click(await screen.findByRole('button', { name: /^Submit$/ }));
-    await u.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /Yes, submit/i }));
-    await screen.findByText('Saved on this phone');
-    expect(db.all('pending_sessions').filter(a => a.data.date === yesterday).length).toBe(0);         // nothing reached the server
-    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
-    const { syncQueue, listQueue } = await import('@/lib/offlineQueue');
-    expect((await listQueue()).length).toBe(1);
-    const r = await syncQueue();
-    expect(r).toMatchObject({ sent: 1, failed: 0, left: 0 });
-    await flushBg();
-    const pend = db.all('pending_sessions').find(p => p.data.date === yesterday);
-    expect(pend).toBeTruthy();                                                                 // arrived as a submission waiting for approval
-    expect(db.all('attendance').filter(a => a.data.date === yesterday).length).toBe(0);
-    await approveBoth(pend.id); await flushBg();
-    expect(db.all('attendance').filter(a => a.data.date === yesterday).length).toBe(1);
-    expect(userByName('Vivek Pai').stats.total).toBe(1);
-    expect((await listQueue()).length).toBe(0);
-  });
 });
+

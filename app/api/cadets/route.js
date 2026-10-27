@@ -32,7 +32,8 @@ export async function GET(request) {
   if (sp.get('all')) {
     if (!(can(payload, 'canManageUsers') || can(payload, 'canViewAllAttendance')))
       return NextResponse.json({ error: 'No permission.' }, { status: 403 });
-    const list = [...users].sort((a, b) => a.name.localeCompare(b.name)).map(u => {
+    const pool = can(payload, 'canManageUsers') ? users : users.filter(u => u.role === 'cadet');
+    const list = [...pool].sort((a, b) => a.name.localeCompare(b.name)).map(u => {
       const st = readStats(u);
       const isCadet = u.role === 'cadet';
       return {

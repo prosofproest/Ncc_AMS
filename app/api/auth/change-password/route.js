@@ -1,14 +1,22 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { db, Collections } from '@/lib/firebase';
-import { getTokenFromRequest, verifyToken, hashPassword } from '@/lib/auth';
+import { getTokenFromRequest, verifyToken, hashPassword, hashTabId, clearTokenCookie } from '@/lib/auth';
 import { issueSession } from '@/lib/session';
 
 export async function POST(request) {
   try {
     const token = getTokenFromRequest(request);
     const payload = token ? await verifyToken(token) : null;
-    if (!payload) return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
+    if (!payload) return clearTokenCookie(NextResponse.json({ error: 'Not authenticated.' }, { status: 401 }));
+
+    const tabId = request.headers.get('x-tab-id');
+    if (!tabId || hashTabId(tabId) !== payload.tid) {
+      return clearTokenCookie(NextResponse.json({
+        error: 'This sign-in belongs to another tab. Please sign in again.',
+        code: 'TAB',
+      }, { status: 401 }));
+    }
 
     const { password } = await request.json().catch(() => ({}));
     if (!password || password.length < 6 || password.length > 100)
@@ -23,7 +31,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Choose a password different from your Regimental Number / username.' }, { status: 400 });
 
     await ref.update({ passwordHash: await hashPassword(password), mustChangePassword: false, updatedAt: new Date().toISOString() });
-    return await issueSession({ ...user, mustChangePassword: false });
+    return await issueSession({ ...user, mustChangePassword: false }, { tabId });
   } catch (err) {
     console.error('change-password error:', err);
     return NextResponse.json({ error: 'Server error.' }, { status: 500 });

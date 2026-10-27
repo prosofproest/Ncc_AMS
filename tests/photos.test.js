@@ -115,7 +115,7 @@ describe('Cloudinary photo upload & emergency switch', () => {
 
         const req = new Request('http://localhost/api/attendance/upload-photo', {
           method: 'POST',
-          headers: { cookie: markerCookie },
+          headers: { cookie: markerCookie, 'x-tab-id': 'test-tab-id-default' },
           body: formData,
         });
 

@@ -23,6 +23,7 @@ export default function ApprovalsPanel({ onChanged }) {
   const [open, setOpen] = useState(null); const [detail, setDetail] = useState(null);
   const [edits, setEdits] = useState({}); const [note, setNote] = useState(''); const [busy, setBusy] = useState('');
   const [rejecting, setRejecting] = useState(false); const [reason, setReason] = useState('');
+  const isAdmin = user?.role === 'admin';
   const reasons = meta?.reasons || [];
   const side = data?.side || user.role;
   const list = data?.submissions || [];
@@ -77,16 +78,73 @@ export default function ApprovalsPanel({ onChanged }) {
               <div className="grow"><div className="name">{fmtDate(s.date)} · {s.activityType}{s.activityDescription ? ` — ${s.activityDescription}` : ''}</div><div className="sub">{s.groupLabel} · by {s.markedByName}{s.markerRole === 'admin' || s.markerRole === 'cto' ? ` (${SIDE[s.markerRole]})` : ''}</div></div>
               {s.needsMe && <span className="badge b-amber">Needs you</span>}
             </div>
-            <div className="row gap-s wrap mt-s"><span className="badge b-green">{s.present} P</span><span className="badge b-red">{s.absent} A</span>{s.photosRequired === false && <span className="badge b-gray">No photo</span>}{state === 'pending' ? <Chain s={s} /> : <span className="badge b-red">Rejected by {s.rejection?.byName}</span>}</div>
+            <div className="row gap-s wrap mt-s">
+              <span className="badge b-green">{s.present} P</span>
+              <span className="badge b-red">{s.absent} A</span>
+              {s.previousRejection && <span className="badge b-blue">Resubmitted</span>}
+              {s.photosRequired === false && <span className="badge b-gray">No photo</span>}
+              {state === 'pending' ? <Chain s={s} /> : <span className="badge b-red">Rejected by {s.rejection?.byName}</span>}
+            </div>
             {state === 'rejected' && <div className="small muted">“{s.rejection?.reason}”</div>}
-            <div className="tiny muted">Submitted {fmtDateTimeIST(s.createdAt)}</div>
+            <div className="row between" style={{ width: '100%', alignItems: 'center', marginTop: 4 }}>
+              <div className="tiny muted">Submitted {fmtDateTimeIST(s.createdAt)}</div>
+              {isAdmin && state === 'rejected' && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="btn btn-danger btn-sm"
+                  style={{ padding: '2px 8px', fontSize: 12, display: 'inline-flex', alignItems: 'center' }}
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    if (!await confirm({
+                      title: 'Delete rejected submission?',
+                      message: 'This will permanently remove this rejected attendance submission.',
+                      confirmText: 'Delete',
+                      danger: true,
+                    })) return;
+                    setBusy(s.id);
+                    const r = await api(`/api/approvals?id=${s.id}`, { method: 'DELETE' });
+                    setBusy('');
+                    if (!r.ok) return toast(r.error || 'Failed to delete', 'err');
+                    toast('Rejected submission deleted.', 'ok');
+                    refresh();
+                  }}
+                >
+                  {busy === s.id ? <Spinner /> : 'Delete'}
+                </span>
+              )}
+            </div>
           </button>))}</div>)}
 
       <Modal open={!!open} onClose={() => setOpen(null)} wide title={open ? `${fmtDate(open.date)} · ${open.activityType}` : 'Review'}
-        footer={open && detail && open.state !== 'rejected' && !rejecting && <>
+        footer={open && detail && (open.state === 'rejected' ? (isAdmin && (
+          <button
+            type="button"
+            className="btn btn-danger btn-sm"
+            onClick={async () => {
+              if (!await confirm({
+                title: 'Delete rejected submission?',
+                message: 'This will permanently remove this rejected attendance submission.',
+                confirmText: 'Delete',
+                danger: true,
+              })) return;
+              setBusy(open.id);
+              const r = await api(`/api/approvals?id=${open.id}`, { method: 'DELETE' });
+              setBusy('');
+              if (!r.ok) return toast(r.error || 'Failed to delete', 'err');
+              toast('Rejected submission deleted.', 'ok');
+              setOpen(null);
+              refresh();
+            }}
+            disabled={busy === open.id}
+          >
+            {busy === open.id ? <Spinner /> : 'Delete'}
+          </button>
+        )) : (!rejecting && <>
           <button className="btn btn-danger btn-sm" onClick={() => setRejecting(true)} disabled={!!busy}>Reject…</button>
-          {dirty.length > 0 && <button className="btn" onClick={saveEdits} disabled={!!busy}>{busy === 'edit' ? <Spinner /> : `Save ${dirty.length} edit${dirty.length > 1 ? 's' : ''}`}</button>}
-          {detail.approvals?.[side] ? <span className="badge b-green" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="check" size={12} /> You approved</span> : <button className="btn btn-success" onClick={approve} disabled={!!busy || dirty.length > 0}>{busy === 'approve' ? <Spinner /> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={16} /> Approve</span>}</button>}</>}>
+          {isAdmin && dirty.length > 0 && <button className="btn" onClick={saveEdits} disabled={!!busy}>{busy === 'edit' ? <Spinner /> : `Save ${dirty.length} edit${dirty.length > 1 ? 's' : ''}`}</button>}
+          {detail.approvals?.[side] ? <span className="badge b-green" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="check" size={12} /> You approved</span> : <button className="btn btn-success" onClick={approve} disabled={!!busy || dirty.length > 0}>{busy === 'approve' ? <Spinner /> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={16} /> Approve</span>}</button>}</>))}>
         {!open ? null : !detail ? <Skeleton n={4} h={56} /> : (
           <div>
             <div className="timeline mb">
@@ -97,12 +155,21 @@ export default function ApprovalsPanel({ onChanged }) {
               {detail.photosRequired === false && <span className="badge b-gray">No photo</span>}
               {detail.geoLat && <a className="badge b-gray" target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${detail.geoLat},${detail.geoLng}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="map-pin" size={12} /> Location</a>}
               {(detail.photoUrls || []).map((u, i) => <a key={i} className="badge b-blue" target="_blank" rel="noreferrer" href={u} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="camera" size={12} /> Photo {i + 1}</a>)}</div>
+            {detail.previousRejection && (
+              <div className="small muted mb">Earlier rejected by {detail.previousRejection.byName}: &apos;{detail.previousRejection.reason}&apos;</div>
+            )}
             {detail.state === 'rejected' && <div className="banner bad mb">Rejected by {detail.rejection?.byName}: “{detail.rejection?.reason}”</div>}
             {rejecting && <div className="card tight mb col" style={{ gap: 10 }}><div className="bold">Reject this submission</div><input className="input" maxLength={200} autoFocus placeholder="Reason (the marker will see this)" value={reason} onChange={e => setReason(e.target.value)} />
               <div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn" onClick={() => setRejecting(false)}>Cancel</button><button className="btn btn-danger" onClick={doReject} disabled={busy === 'reject'}>{busy === 'reject' ? <Spinner /> : 'Reject'}</button></div></div>}
-            {detail.state !== 'rejected' && <div className="banner info mb">Check the roll. Tap P / A to correct a mistake (editing records your approval and asks the {side === 'admin' ? 'CTO' : 'Admin'} to look again).</div>}
+            {detail.state !== 'rejected' && (
+              <div className="banner info mb">
+                {isAdmin
+                  ? 'Check the roll. Tap P / A to correct a mistake (editing records your approval and asks the CTO to look again).'
+                  : 'Only the Administrator can correct attendance. You can approve or reject.'}
+              </div>
+            )}
             {[...detail.records].sort((a, b) => (a.cadetYear || 9) - (b.cadetYear || 9) || a.cadetName.localeCompare(b.cadetName)).map(r => {
-              const e = cur(r), editable = detail.state === 'pending';
+              const e = cur(r), editable = isAdmin && detail.state === 'pending';
               return (
                 <div key={r.cadetId} className={`item${e.status === 'Absent' ? ' absent' : ''}`} style={{ flexWrap: 'wrap' }}>
                   <div className="grow"><div className="name">{r.cadetName}{dirty.includes(r) && <span className="badge b-amber" style={{ marginLeft: 8 }}>changed</span>}</div><div className="sub">{r.cadetRegNo || 'No Reg No.'} · Year {r.cadetYear}{e.status === 'Absent' && !editable ? ` · ${r.reason || 'no reason'}` : ''}</div></div>
@@ -113,7 +180,7 @@ export default function ApprovalsPanel({ onChanged }) {
                     {e.reason === OTHER && <input className="input" maxLength={100} placeholder="Type the reason" value={e.other} onChange={ev => setEdits(s => ({ ...s, [r.cadetId]: { ...e, other: ev.target.value } }))} />}</div>}
                 </div>);
             })}
-            {dirty.length > 0 && <div className="field mt"><label>Note for the log (optional)</label><input className="input" maxLength={200} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Priya was late, not absent" /></div>}
+            {isAdmin && dirty.length > 0 && <div className="field mt"><label>Note for the log (optional)</label><input className="input" maxLength={200} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Priya was late, not absent" /></div>}
           </div>)}
       </Modal>
     </div>

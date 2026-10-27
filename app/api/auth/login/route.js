@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 import { NextResponse } from 'next/server';
 import { db, Collections } from '@/lib/firebase';
-import { verifyPassword, generateOtp, hashOtp, randomId, maskEmail } from '@/lib/auth';
+import { verifyPassword, generateOtp, hashOtp, randomId, maskEmail, hashTabId } from '@/lib/auth';
 import { issueSession } from '@/lib/session';
 import { findUserByIdentifier } from '@/lib/users';
 import { cleanEmail } from '@/lib/settings';
@@ -14,6 +14,9 @@ const MAX_FAILS = 5, LOCK_MIN = 15, OTP_MIN = 5;
 export async function POST(request) {
   try {
     const body = await request.json().catch(() => ({}));
+    const tabId = typeof body.tabId === 'string' ? body.tabId.trim() : '';
+    if (!tabId) return NextResponse.json({ error: 'tabId is required' }, { status: 400 });
+
     const identifier = String(body.identifier || body.username || body.reg_no || '').trim();
     const password   = String(body.password || '');
     if (!identifier || !password) return NextResponse.json({ error: 'Enter your username / regimental number and password.' }, { status: 400 });
@@ -46,18 +49,18 @@ export async function POST(request) {
       if (!email) {
         if (user.role === 'admin') {            // never lock the administrator out
           await ref.update({ failedLogins: 0, lockedUntil: null, lastLoginAt: new Date().toISOString() });
-          return await issueSession(user, { otpSkipped: 'The admin account has no email set, so the OTP step was skipped.' });
+          return await issueSession(user, { tabId, otpSkipped: 'The admin account has no email set, so the OTP step was skipped.' });
         }
         if (user.role === 'cadet') {
           await ref.update({ failedLogins: 0, lockedUntil: null, lastLoginAt: new Date().toISOString() });
           await logEvent({ type: 'auth:otp-skipped', ok: true, message: `OTP skipped for cadet ${user.regNo || user.name}: no email on file`, meta: { userId: user.id } }).catch(() => {});
-          return await issueSession(user, { otpSkipped: 'No e-mail on file, so the code step was skipped.' });
+          return await issueSession(user, { tabId, otpSkipped: 'No e-mail on file, so the code step was skipped.' });
         }
         return NextResponse.json({ error: 'OTP is on for this account but no e-mail is set. Ask the Admin to add your e-mail.' }, { status: 403 });
       }
       const challengeId = randomId(16), code = generateOtp();
       await db.collection(Collections.OTP).doc(challengeId).set({
-        userId: user.id, codeHash: hashOtp(challengeId, code), attempts: 0, resends: 0,
+        userId: user.id, codeHash: hashOtp(challengeId, code), tabHash: hashTabId(tabId), attempts: 0, resends: 0,
         expiresAt: Date.now() + OTP_MIN * 60000, lastSentAt: Date.now(), createdAt: new Date().toISOString(),
       });
       const sent = await sendOtpEmail({ to: email, name: user.name, code, minutes: OTP_MIN });
@@ -70,7 +73,7 @@ export async function POST(request) {
     }
 
     await ref.update({ failedLogins: 0, lockedUntil: null, lastLoginAt: new Date().toISOString() });
-    return await issueSession(user);
+    return await issueSession(user, { tabId });
   } catch (err) {
     console.error('Login error:', err);
     return NextResponse.json({ error: 'Server error. Please try again.' }, { status: 500 });

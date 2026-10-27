@@ -20,6 +20,8 @@ export function Sidebar({
   onCloseDrawer,
   railExpanded = false,
   onToggleRail,
+  navPending,
+  onNavigate,
 }) {
   const pathname = usePathname();
   const sidebarRef = useRef(null);
@@ -86,7 +88,10 @@ export function Sidebar({
         <Link
           href={home}
           className="sidebar-brand"
-          onClick={onCloseDrawer}
+          onClick={() => {
+            onCloseDrawer?.();
+            onNavigate?.(home);
+          }}
           aria-label="NCC AMS Home"
         >
           <BrandMark size={32} />
@@ -106,14 +111,17 @@ export function Sidebar({
               {group.title && <div className="nav-group-title">{group.title}</div>}
               <ul className="nav-group-items">
                 {group.items.map((item) => {
-                  const active = isItemActive(pathname, item.href);
+                  const active = isItemActive(navPending || pathname, item.href);
                   return (
                     <li key={item.id}>
                       <Link
                         href={item.href}
                         className={`nav-link ${active ? 'active' : ''}`}
                         aria-current={active ? 'page' : undefined}
-                        onClick={onCloseDrawer}
+                        onClick={() => {
+                          onCloseDrawer?.();
+                          onNavigate?.(item.href);
+                        }}
                         title={item.label}
                       >
                         <span className="nav-icon">

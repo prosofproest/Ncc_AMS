@@ -6,7 +6,7 @@ import { UIProvider, useUI, api, Spinner, initials } from '@/app/components/ui';
 import { Icon } from '@/app/components/Icon';
 import { UserCtx, hasPerm } from '@/app/components/user';
 import { useRealtimeData } from '@/lib/useRealtimeData';
-import { listQueue, syncQueue } from '@/lib/offlineQueue';
+import { clearTab } from '@/lib/tab';
 import Sidebar from '@/app/components/shell/Sidebar';
 import MobileHeader from '@/app/components/shell/MobileHeader';
 import BottomBar from '@/app/components/shell/BottomBar';
@@ -74,10 +74,44 @@ function Shell({ children }) {
   const [welcome, setWelcome] = useState(false);
   const [muted, setMuted] = useState(false);
   const [online, setOnline] = useState(true);
-  const [pending, setPending] = useState(0);
-  const [syncing, setSyncing] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [railExpanded, setRailExpanded] = useState(false);
+  const [navPending, setNavPending] = useState(null);
+  const fallbackTimer = useRef(null);
+
+  // Optimistic navigation handler with 3-second fallback
+  const handleNavigate = useCallback((href) => {
+    if (!href || href === pathname) return;
+    setNavPending(href);
+    if (fallbackTimer.current) clearTimeout(fallbackTimer.current);
+    fallbackTimer.current = setTimeout(() => {
+      if (typeof window !== 'undefined') {
+        window.location.assign(href);
+      }
+    }, 3000);
+  }, [pathname]);
+
+  // Clear optimistic state when pathname changes
+  useEffect(() => {
+    setNavPending(null);
+    if (fallbackTimer.current) {
+      clearTimeout(fallbackTimer.current);
+      fallbackTimer.current = null;
+    }
+  }, [pathname]);
+
+  useEffect(() => {
+    return () => {
+      if (fallbackTimer.current) clearTimeout(fallbackTimer.current);
+    };
+  }, []);
+
+  // Session expiry tracking & warnings
+  const [expiresAt, setExpiresAt] = useState(null);
+  const [serverOffset, setServerOffset] = useState(0);
+  const [remainingSec, setRemainingSec] = useState(null);
+  const toasted1m = useRef(false);
+  const timingOut = useRef(false);
 
   // who am I?
   useEffect(() => {
@@ -86,6 +120,16 @@ function Shell({ children }) {
       const u = r.data.user;
       if (u.mustChangePassword) return router.replace('/change-password');
       setUser(u);
+      try {
+        if (u.id) sessionStorage.setItem('ncc_uid', u.id);
+      } catch {}
+
+      if (r.data.expiresAt) {
+        setExpiresAt(r.data.expiresAt);
+        const offset = r.data.serverNow ? (r.data.serverNow - Date.now()) : 0;
+        setServerOffset(offset);
+      }
+
       try {
         setMuted(localStorage.getItem('ncc_voice') === 'off');
         setRailExpanded(localStorage.getItem('ncc_rail_expanded') === 'true');
@@ -108,51 +152,52 @@ function Shell({ children }) {
     }
   }, [router]);
 
+  // Session timer
+  useEffect(() => {
+    if (!expiresAt) return;
+    const tick = () => {
+      const estimatedServerNow = Date.now() + serverOffset;
+      const diffMs = expiresAt - estimatedServerNow;
+      const sec = Math.max(0, Math.ceil(diffMs / 1000));
+      setRemainingSec(sec);
+
+      if (sec <= 60 && sec > 0 && !toasted1m.current) {
+        toasted1m.current = true;
+        toast('You will be signed out in 1:00 for security. Submit your attendance now.', 'err');
+      }
+
+      if (sec === 0 && !timingOut.current) {
+        timingOut.current = true;
+        api('/api/auth/logout', { method: 'POST' }).finally(() => {
+          clearTab();
+          router.replace('/login?reason=timeout');
+        });
+      }
+    };
+
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [expiresAt, serverOffset, router, toast]);
+
   // Close drawer on path change
   useEffect(() => {
     setDrawerOpen(false);
   }, [pathname]);
 
-  // offline queue: count + auto sync
-  const refreshPending = useCallback(async () => {
-    setPending((await listQueue()).filter((i) => i.status !== 'failed').length);
-  }, []);
-
-  const doSync = useCallback(
-    async (manual) => {
-      setSyncing(true);
-      const r = await syncQueue();
-      setSyncing(false);
-      await refreshPending();
-      if (r.sent) toast(`${r.sent} saved attendance sent successfully`, 'ok');
-      if (r.failed) toast('One saved attendance was rejected — open Mark -> Saved on this phone.', 'err');
-      if (manual && !r.sent && !r.failed) toast(navigator.onLine ? 'Nothing left to send.' : 'Still offline.', 'info');
-    },
-    [toast, refreshPending]
-  );
-
+  // Online / offline tracking
   useEffect(() => {
     if (!user) return;
     setOnline(navigator.onLine);
-    refreshPending();
-    doSync(false);
-    const on = () => {
-      setOnline(true);
-      doSync(false);
-    };
+    const on = () => setOnline(true);
     const off = () => setOnline(false);
-    const vis = () => document.visibilityState === 'visible' && (refreshPending(), doSync(false));
     window.addEventListener('online', on);
     window.addEventListener('offline', off);
-    document.addEventListener('visibilitychange', vis);
-    window.addEventListener('ncc-queue-changed', refreshPending);
     return () => {
       window.removeEventListener('online', on);
       window.removeEventListener('offline', off);
-      document.removeEventListener('visibilitychange', vis);
-      window.removeEventListener('ncc-queue-changed', refreshPending);
     };
-  }, [user, doSync, refreshPending]);
+  }, [user]);
 
   // Live approval count polling for Admin and CTO
   const canApprove = (user?.role === 'admin' || user?.role === 'cto') && hasPerm(user, 'canApproveAttendance');
@@ -198,6 +243,7 @@ function Shell({ children }) {
     else speak('Voice greeting turned on.');
   }
 
+  // Toggle rail expansion
   function toggleRail() {
     const n = !railExpanded;
     setRailExpanded(n);
@@ -209,6 +255,8 @@ function Shell({ children }) {
   async function logout() {
     try {
       sessionStorage.removeItem('ncc_greeted');
+      if (user?.id) sessionStorage.removeItem(`ncc_draft_${user.id}`);
+      clearTab();
     } catch {}
     window.speechSynthesis?.cancel();
     await api('/api/auth/logout', { method: 'POST' });
@@ -255,6 +303,13 @@ function Shell({ children }) {
 
   return (
     <UserCtx.Provider value={user}>
+      {navPending && (
+        <div
+          className="nav-progress-bar"
+          role="progressbar"
+          aria-label="Loading page"
+        />
+      )}
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>
@@ -272,6 +327,8 @@ function Shell({ children }) {
           onCloseDrawer={() => setDrawerOpen(false)}
           railExpanded={railExpanded}
           onToggleRail={toggleRail}
+          navPending={navPending}
+          onNavigate={handleNavigate}
         />
 
         <div className={`app-main ${railExpanded ? 'rail-expanded' : ''}`}>
@@ -284,29 +341,21 @@ function Shell({ children }) {
           <main id="main-content" className="content-wrap" tabIndex={-1}>
             {welcome && <div className="welcome">Jai Hind, {user.name}</div>}
 
-            {!online && (
-              <div className="banner warn mb">
-                <Icon name="wifi-off" size={16} />
+            {remainingSec !== null && remainingSec <= 300 && remainingSec > 0 && (
+              <div className="banner warn mb" role="alert">
+                <Icon name="alert-triangle" size={16} />
                 <span>
-                  You are offline. You can still mark attendance — it is saved on this phone and sent when you are back online.
+                  You will be signed out in {Math.floor(remainingSec / 60)}:{String(remainingSec % 60).padStart(2, '0')} for security. Submit your attendance now.
                 </span>
               </div>
             )}
 
-            {pending > 0 && (
-              <div className="banner info mb">
-                <Icon name="clock" size={16} />
+            {!online && (
+              <div className="banner warn mb">
+                <Icon name="wifi-off" size={16} />
                 <span>
-                  {pending} attendance record{pending > 1 ? 's' : ''} saved on this phone, waiting to be sent.
+                  You are offline. Attendance can only be submitted when you are connected.
                 </span>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary right"
-                  onClick={() => doSync(true)}
-                  disabled={syncing || !online}
-                >
-                  {syncing ? <Spinner /> : 'Send now'}
-                </button>
               </div>
             )}
 
@@ -329,6 +378,8 @@ function Shell({ children }) {
             user={user}
             needsMe={needsMe}
             onOpenDrawer={() => setDrawerOpen(true)}
+            navPending={navPending}
+            onNavigate={handleNavigate}
           />
         </div>
       </div>
