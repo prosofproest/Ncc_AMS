@@ -5,6 +5,9 @@ export const metadata = {
   description: 'AMS — NCC Airwing Flight-B, 6 KAR AIR SQN NCC',
   manifest: '/manifest.json',
   appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'NCC AMS' },
+  other: {
+    'mobile-web-app-capable': 'yes',
+  },
 };
 export const viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: [{ media: '(prefers-color-scheme: light)', color: '#E8EFFC' }, { media: '(prefers-color-scheme: dark)', color: '#0B1020' }] };
 
@@ -16,7 +19,8 @@ export default function RootLayout({ children }) {
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
       <body>{children}</body>
     </html>
