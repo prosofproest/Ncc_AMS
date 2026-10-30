@@ -3,7 +3,7 @@ import { useRealtimeData } from '@/lib/useRealtimeData';
 import { Skeleton, Empty } from '@/app/components/ui';
 import { fmtDateTimeIST, fmtDate } from '@/lib/time';
 
-const KIND = { submit: ['Submitted', 'b-blue'], resubmit: ['Resubmitted', 'b-blue'], approve: ['Approved', 'b-green'], reject: ['Rejected', 'b-red'], 'pending-edit': ['Edited (pending)', 'b-amber'], create: ['Saved', 'b-green'], edit: ['Edited', 'b-amber'], delete: ['Deleted', 'b-red'], 'delete-rejected': ['Deleted (rejected)', 'b-red'], benefit: ['Benefit', 'b-blue'], 'benefit-remove': ['Benefit removed', 'b-red'], promotion: ['Promotion', 'b-blue'] };
+const KIND = { submit: ['Submitted', 'b-blue'], resubmit: ['Resubmitted', 'b-blue'], approve: ['Approved', 'b-green'], reject: ['Rejected', 'b-red'], return: ['Returned to Administrator', 'b-amber'], 'pending-edit': ['Edited (pending)', 'b-amber'], create: ['Saved', 'b-green'], edit: ['Edited', 'b-amber'], delete: ['Deleted', 'b-red'], 'delete-rejected': ['Deleted (rejected)', 'b-red'], benefit: ['Benefit', 'b-blue'], 'benefit-remove': ['Benefit removed', 'b-red'], promotion: ['Promotion', 'b-blue'] };
 
 export default function LogsPanel() {
   const { data, loading } = useRealtimeData('/api/attendance/audit', 30000);

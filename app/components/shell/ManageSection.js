@@ -83,6 +83,7 @@ export default function ManageSection({ section: rawSection }) {
   }, [rawSection]);
 
   const [activeSection, setActiveSection] = useState(canonicalSection);
+  const [headerOverride, setHeaderOverride] = useState(null);
 
   useEffect(() => {
     setActiveSection(canonicalSection);
@@ -184,19 +185,23 @@ export default function ManageSection({ section: rawSection }) {
   };
 
   const info = getSectionInfo();
+  const title = (currentSection === 'mark' && headerOverride?.title) || info.title;
+  const description = (currentSection === 'mark' && headerOverride?.description) || info.description;
 
   return (
     <>
-      <PageHeader title={info.title} description={info.description} />
+      <PageHeader title={title} description={description} />
       {currentSection === 'overview' && <Overview goTab={goTab} />}
       {currentSection === 'approvals' && <ApprovalsPanel onChanged={() => {}} />}
       {currentSection === 'mark' && (
         <MarkAttendance
           goHistory={() => {
+            setHeaderOverride(null);
             const target = canApprove ? 'approvals' : 'records';
             setActiveSection(target);
             router.push(`${base}/${target}`);
           }}
+          onHeaderChange={setHeaderOverride}
           who="manager"
         />
       )}

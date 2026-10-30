@@ -222,7 +222,7 @@ describe('4. marking attendance (years 1 & 2)', () => {
     state.session1 = r.json.sessionId;
     await flushBg();
     const pend = (await db.collection('pending_sessions').doc(state.session1).get()).data();
-    expect(pend).toMatchObject({ state: 'pending', groupLabel: 'Year 1 & 2', total: 6, present: 3, absent: 3, cycle: 1, markedByName: 'Sgt Rohan', approvals: {}, waitingFor: ['admin', 'cto'] });
+    expect(pend).toMatchObject({ state: 'pending', groupLabel: 'Year 1 & 2', total: 6, present: 3, absent: 3, cycle: 1, markedByName: 'Sgt Rohan', approvals: {}, waitingFor: ['admin'] });
     expect(pend.records.length).toBe(6);
     expect(db.all('attendance').length).toBe(0);                                              // not saved
     expect(db.all('sessions').length).toBe(0);
@@ -240,7 +240,7 @@ describe('4. marking attendance (years 1 & 2)', () => {
     expect((await call(apprR.GET, { cookie: state.marker, url: '/api/approvals?summary=1' })).status).toBe(403);
     expect((await call(apprR.GET, { cookie: state.marker, url: '/api/approvals?state=pending' })).status).toBe(403);
     const mine = await call(apprR.GET, { cookie: state.marker, url: '/api/approvals?mine=1' });
-    expect(mine.json.submissions.length).toBe(1); expect(mine.json.submissions[0]).toMatchObject({ state: 'pending', waitingFor: ['admin', 'cto'] }); expect(mine.json.submissions[0].records).toBeUndefined();
+    expect(mine.json.submissions.length).toBe(1); expect(mine.json.submissions[0]).toMatchObject({ state: 'pending', waitingFor: ['admin'] }); expect(mine.json.submissions[0].records).toBeUndefined();
     expect((await call(apprR.GET, { cookie: state.marker, url: `/api/approvals?id=${state.session1}` })).status).toBe(200);   // own submission
     const other = await call(cadetsR.POST, { method: 'POST', cookie: state.admin, body: { name: 'Other Marker', role: 'cadet', is_marker: true, year: 2, type: 'SD', reg_no: 'OTHER1', username: 'other', password: 'Other@123', otp_required: false } });
     const ol = await login('other', 'Other@123');
@@ -709,12 +709,12 @@ describe('11. approval workflow — reject, edit while pending, admin / CTO taki
     const d = y(5);
     const r = await post(state.marker, d, [2], [att('Arjun Sharma', 'Present'), att('Priya Nair', 'Absent', 'Late arrival')]);
     expect(r.status).toBe(200);
-    expect((await call(apprR.POST, { method: 'POST', cookie: state.cto, body: { id: r.json.sessionId, action: 'reject', reason: '' } })).status).toBe(400);
+    expect((await call(apprR.POST, { method: 'POST', cookie: state.admin, body: { id: r.json.sessionId, action: 'reject', reason: '' } })).status).toBe(400);
     expect((await call(apprR.POST, { method: 'POST', cookie: state.marker, body: { id: r.json.sessionId, action: 'reject', reason: 'x' } })).status).toBe(403);
-    const rej = await call(apprR.POST, { method: 'POST', cookie: state.cto, body: { id: r.json.sessionId, action: 'reject', reason: 'Wrong group — Priya is Year 1' } });
+    const rej = await call(apprR.POST, { method: 'POST', cookie: state.admin, body: { id: r.json.sessionId, action: 'reject', reason: 'Wrong group — Priya is Year 1' } });
     expect(rej.json.success).toBe(true);
     const doc = (await db.collection('pending_sessions').doc(r.json.sessionId).get()).data();
-    expect(doc).toMatchObject({ state: 'rejected', waitingFor: [], rejection: { byName: 'Lt. Sir', side: 'cto', reason: 'Wrong group — Priya is Year 1' } });
+    expect(doc).toMatchObject({ state: 'rejected', waitingFor: [], rejection: { byName: 'Admin Officer', side: 'admin', reason: 'Wrong group — Priya is Year 1' } });
     expect((await approve(state.admin, r.json.sessionId)).status).toBe(409);                  // cannot approve a rejected one
     const mine = await call(apprR.GET, { cookie: state.marker, url: '/api/approvals?mine=1' });
     expect(mine.json.submissions.find(x => x.id === r.json.sessionId)).toMatchObject({ state: 'rejected', rejection: { reason: 'Wrong group — Priya is Year 1' } });
@@ -727,7 +727,6 @@ describe('11. approval workflow — reject, edit while pending, admin / CTO taki
 
   it('editing a pending roll: the editor\'s side counts as approved, the other side must approve again', async () => {
     const id = state.keepPending;
-    await approve(state.cto, id);                                                           // CTO approved…
     const ctoAttempt = await call(apprR.PUT, { method: 'PUT', cookie: state.cto, body: { id, note: 'He was late', changes: [att('Arjun Sharma', 'Absent', 'Late arrival')] } });
     expect(ctoAttempt.status).toBe(403);
     expect(ctoAttempt.json.error).toBe('Only the Administrator can correct attendance. You can approve or reject.');
@@ -735,11 +734,12 @@ describe('11. approval workflow — reject, edit while pending, admin / CTO taki
     expect(e.json).toMatchObject({ success: true, changed: 1 });
     const doc = (await db.collection('pending_sessions').doc(id).get()).data();
     expect(doc.records[0]).toMatchObject({ status: 'Absent', reason: 'Late arrival' });
-    expect(doc).toMatchObject({ present: 0, absent: 1, waitingFor: ['cto'] });
-    expect(Object.keys(doc.approvals)).toEqual(['admin']);                                      // CTO's earlier approval was reset
+    expect(doc).toMatchObject({ present: 0, absent: 1, waitingFor: ['admin'] });
+    expect(Object.keys(doc.approvals)).toEqual([]);
     expect((await call(apprR.PUT, { method: 'PUT', cookie: state.admin, body: { id, changes: [att('Arjun Sharma', 'Absent', '')] } })).status).toBe(400);   // reason needed
     expect((await call(apprR.PUT, { method: 'PUT', cookie: state.marker, body: { id, changes: [att('Arjun Sharma', 'Present')] } })).status).toBe(403);
     expect(db.all('audit_log').some(a => a.data.type === 'pending-edit' && a.data.changes[0].to === 'Absent')).toBe(true);
+    await approve(state.admin, id);
     const fin = await approve(state.cto, id);
     expect(fin.json.final).toBe(true); await flushBg();
     expect(userByName('Arjun Sharma').stats).toMatchObject({ total: 2, present: 1, absent: 1 });
@@ -797,7 +797,7 @@ describe('11. approval workflow — reject, edit while pending, admin / CTO taki
     expect(c.status).toBe(409); expect(c.json.error).toMatch(/already exists/i);
     expect(userByName('Priya Nair').stats.total).toBe(before);
     const doc = (await db.collection('pending_sessions').doc(r.json.sessionId).get()).data();
-    expect(doc.state).toBe('pending'); expect(doc.commitError).toBeTruthy();
+    expect((await call(apprR.POST, { method: 'POST', cookie: state.cto, body: { id: r.json.sessionId, action: 'reject', reason: 'Duplicate of an existing record' } })).json.success).toBe(true);
     expect((await call(apprR.POST, { method: 'POST', cookie: state.admin, body: { id: r.json.sessionId, action: 'reject', reason: 'Duplicate of an existing record' } })).json.success).toBe(true);
     await db.collection('attendance').doc(`c2_${y(10)}_${userByName('Priya Nair').id}`).delete();
     expect((await approve(state.admin, 'does-not-exist')).status).toBe(404);

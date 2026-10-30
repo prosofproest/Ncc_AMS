@@ -14,6 +14,7 @@
     "check-env:live": "node --env-file=.env.local scripts/check-env.mjs --live",
     "check-layout": "node --env-file=.env.local scripts/check-layout.mjs",
     "check-nav": "node --env-file=.env.local scripts/check-nav.mjs",
+    "check-resubmit": "node --env-file=.env.local scripts/check-resubmit.mjs",
     "test-cloudinary": "node --env-file=.env.local scripts/test-cloudinary.mjs"
   },
   "dependencies": {

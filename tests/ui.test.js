@@ -12,7 +12,7 @@ import { todayIST } from '@/lib/time';
 
 const { nav } = vi.hoisted(() => ({ nav: { replace: vi.fn(), push: vi.fn(), path: '/dashboard/marker' } }));
 const stableRouter = vi.hoisted(() => ({}));
-vi.mock('next/navigation', () => { Object.assign(stableRouter, { replace: nav.replace, push: nav.push }); return { useRouter: () => stableRouter, usePathname: () => nav.path }; });   // Next's real useRouter() is referentially stable
+vi.mock('next/navigation', () => { Object.assign(stableRouter, { replace: nav.replace, push: nav.push }); return { useRouter: () => stableRouter, usePathname: () => nav.path, useSearchParams: () => new URLSearchParams(typeof window !== 'undefined' ? (window.location.search || (nav.path?.includes('?') ? nav.path.slice(nav.path.indexOf('?')) : '')) : '') }; });   // Next's real useRouter() is referentially stable
 vi.mock('next/link', async () => { const R = await import('react'); return { default: ({ href, children, ...p }) => R.createElement('a', { href, ...p }, children) }; });
 
 import LoginPage from '@/app/login/page';
@@ -185,10 +185,10 @@ describe('marker: mark attendance end to end (the real screen + the real API)', 
     mountMarker('history');
     await screen.findByText('My submissions', {}, { timeout: 8000 }); expect(screen.getByText('1 waiting')).toBeTruthy();
     const row = screen.getByText(/Year 1 & 2/, { selector: '.name' }).closest('.item');
-    expect(within(row).getByText(/Admin/).textContent).toMatch(/Awaiting/); expect(within(row).getByText(/CTO/).textContent).toMatch(/Awaiting/);
-    // Admin approves first -> the marker's screen shows Approved Admin, Awaiting CTO within seconds
+    expect(within(row).getByText('With Administrator')).toBeTruthy();
+    // Admin approves first -> the marker's screen shows With CTO within seconds
     await call(apprR.POST, { method: 'POST', cookie: await cookieOf('admin', 'Admin@123'), body: { id: state.pendingId, action: 'approve' } });
-    await wait(() => { const r = screen.getByText(/Year 1 & 2/, { selector: '.name' }).closest('.item'); expect(within(r).getByText(/Admin/).textContent).toMatch(/Approved/); expect(within(r).getByText(/CTO/).textContent).toMatch(/Awaiting/); }, { timeout: 12000 });
+    await wait(() => { const r = screen.getByText(/Year 1 & 2/, { selector: '.name' }).closest('.item'); expect(within(r).getByText('With CTO')).toBeTruthy(); }, { timeout: 12000 });
     expect(db.all('attendance').length).toBe(0);
     await call(apprR.POST, { method: 'POST', cookie: await cookieOf('sir', 'Sir@12345'), body: { id: state.pendingId, action: 'approve' } });
     await flushBg();

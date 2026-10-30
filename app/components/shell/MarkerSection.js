@@ -12,6 +12,7 @@ export default function MarkerSection({ section }) {
   const router = useRouter();
   const sec = String(section || '').toLowerCase();
   const [activeSec, setActiveSec] = useState(sec);
+  const [headerOverride, setHeaderOverride] = useState(null);
 
   useEffect(() => {
     setActiveSec(sec);
@@ -32,22 +33,25 @@ export default function MarkerSection({ section }) {
   return (
     <>
       <PageHeader
-        title={currentSec === 'mark' ? 'Mark attendance' : 'History & status'}
-        description={currentSec === 'mark' ? 'Take live or historical parade attendance for cadets' : 'Track your submitted attendance sessions and view past parade records'}
+        title={headerOverride?.title || (currentSec === 'mark' ? 'Mark attendance' : 'History & status')}
+        description={headerOverride?.description || (currentSec === 'mark' ? 'Take live or historical parade attendance for cadets' : 'Track your submitted attendance sessions and view past parade records')}
       />
       {currentSec === 'mark' ? (
         <MarkAttendance
           goHistory={() => {
+            setHeaderOverride(null);
             setActiveSec('history');
             router.push('/dashboard/marker/history');
           }}
+          onHeaderChange={setHeaderOverride}
           who="marker"
         />
       ) : (
         <History
-          onMark={() => {
+          onMark={(resubmitId) => {
             setActiveSec('mark');
-            router.push('/dashboard/marker/mark');
+            const target = resubmitId ? `/dashboard/marker/mark?resubmit=${encodeURIComponent(resubmitId)}` : '/dashboard/marker/mark';
+            router.push(target);
           }}
         />
       )}
@@ -57,11 +61,10 @@ export default function MarkerSection({ section }) {
 
 function Stage({ s }) {
   if (s.state === 'rejected') return <span className="badge b-red">Rejected</span>;
-  const a = s.approvals || {};
+  const stage = s.stage || (s.approvals?.admin ? 'cto' : 'admin');
   return (
     <span className="row gap-s wrap">
-      <span className={`badge ${a.admin ? 'b-green' : 'b-amber'}`}>{a.admin ? 'Approved' : 'Awaiting'} Admin</span>
-      <span className={`badge ${a.cto ? 'b-green' : 'b-amber'}`}>{a.cto ? 'Approved' : 'Awaiting'} CTO</span>
+      <span className="badge b-blue">{stage === 'cto' ? 'With CTO' : 'With Administrator'}</span>
     </span>
   );
 }
@@ -112,9 +115,8 @@ function History({ onMark }) {
                     type="button"
                     className="btn btn-primary btn-sm"
                     onClick={() => {
-                      sessionStorage.setItem('ncc_resubmit', w.id);
-                      if (onMark) onMark();
-                      else router.push('/dashboard/marker/mark');
+                      if (onMark) onMark(w.id);
+                      else router.push(`/dashboard/marker/mark?resubmit=${encodeURIComponent(w.id)}`);
                     }}
                   >
                     Correct and resubmit

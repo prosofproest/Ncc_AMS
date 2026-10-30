@@ -1,6 +1,6 @@
 'use client';
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useRealtimeData } from '@/lib/useRealtimeData';
 import { useUser } from '@/app/components/user';
 import { api, useUI, Modal, Spinner, Skeleton, Empty, Stat, initials } from '@/app/components/ui';
@@ -38,8 +38,57 @@ function setCache(key, data) {
 // The marking screen — used by markers (Marker page) and by the Admin / CTO (their "Mark" tab).
 // `goHistory` opens the page that shows the submission's approval status.
 // ═════════════════════════════════════════════════════════════════════════════
-export default function MarkAttendance({ goHistory, who = 'marker' }) {
+export default function MarkAttendance(props) {
+  return (
+    <Suspense fallback={<Skeleton n={4} h={64} />}>
+      <MarkAttendanceInner {...props} />
+    </Suspense>
+  );
+}
+
+function MarkAttendanceInner({ goHistory, who = 'marker', onHeaderChange }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+
+  const getResubmitParam = useCallback(() => {
+    if (searchParams?.get) {
+      const v = searchParams.get('resubmit');
+      if (v) return v;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const v = new URLSearchParams(window.location.search).get('resubmit');
+        if (v) return v;
+      } catch {}
+      try {
+        const raw = pathname || window.location.pathname;
+        const qIdx = raw.indexOf('?');
+        if (qIdx !== -1) {
+          const v = new URLSearchParams(raw.slice(qIdx)).get('resubmit');
+          if (v) return v;
+        }
+      } catch {}
+      try {
+        const leg = sessionStorage.getItem('ncc_resubmit');
+        if (leg) {
+          sessionStorage.removeItem('ncc_resubmit');
+          return leg;
+        }
+      } catch {}
+    }
+    return null;
+  }, [searchParams, pathname]);
+
+  const [resubmitId, setResubmitId] = useState(() => getResubmitParam());
+
+  useEffect(() => {
+    const id = getResubmitParam();
+    if (id && id !== resubmitId) {
+      setResubmitId(id);
+    }
+  }, [getResubmitParam, resubmitId]);
+
   const ctxUser = useUser();
   const { toast } = useUI();
   const today = todayIST();
@@ -70,6 +119,7 @@ export default function MarkAttendance({ goHistory, who = 'marker' }) {
   const [done, setDone] = useState(null);
   const [resubmitOf, setResubmitOf] = useState(null);
   const [rejectionBanner, setRejectionBanner] = useState(null);
+  const [resubmitError, setResubmitError] = useState(null);
   const [draftBanner, setDraftBanner] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
@@ -78,6 +128,7 @@ export default function MarkAttendance({ goHistory, who = 'marker' }) {
   const reasons = meta?.reasons || ['Sick / Medical', 'Family function', 'Exam / Academic duty', 'Out of station', 'Late arrival', 'No information'];
   const userInteracted = useRef(false);
   const draftChecked = useRef(false);
+  const loadedResubmitRef = useRef(null);
 
   // ── online status listener ──────────────────────────────────────────────────
   useEffect(() => {
@@ -91,28 +142,56 @@ export default function MarkAttendance({ goHistory, who = 'marker' }) {
     };
   }, []);
 
-  // ── pre-fill rejected submission if ncc_resubmit key exists ─────────────────
-  const resubmitChecked = useRef(false);
+  const cleanQuery = useCallback(() => {
+    try {
+      const cleanPath = (pathname || (typeof window !== 'undefined' ? window.location.pathname : '') || '').split('?')[0];
+      if (cleanPath && router?.replace) {
+        router.replace(cleanPath);
+      }
+    } catch {}
+    setResubmitId(null);
+    loadedResubmitRef.current = null;
+  }, [pathname, router]);
+
+  // ── pre-fill rejected submission if ?resubmit= exists ─────────────────────
   useEffect(() => {
-    if (resubmitChecked.current) return;
-    const resubmitId = typeof window !== 'undefined' ? sessionStorage.getItem('ncc_resubmit') : null;
-    if (!resubmitId) return;
-    resubmitChecked.current = true;
-    sessionStorage.removeItem('ncc_resubmit');
+    if (!resubmitId) {
+      loadedResubmitRef.current = null;
+      return;
+    }
+    if (loadedResubmitRef.current === resubmitId) return;
+    loadedResubmitRef.current = resubmitId;
 
     let mounted = true;
     (async () => {
       const r = await api(`/api/approvals?id=${resubmitId}`);
       if (!mounted) return;
       if (!r.ok || !r.data?.submission) {
-        toast(r.error || 'Could not load rejected submission', 'err');
+        setResubmitError(r.error || 'This submission was not found, is not rejected, or does not belong to you.');
+        setResubmitOf(null);
+        setRejectionBanner(null);
+        onHeaderChange?.(null);
         return;
       }
       const s = r.data.submission;
+      if (s.state !== 'rejected') {
+        setResubmitError('This submission was not found, is not rejected, or does not belong to you.');
+        setResubmitOf(null);
+        setRejectionBanner(null);
+        onHeaderChange?.(null);
+        return;
+      }
+
+      setResubmitError(null);
       setResubmitOf(s.id);
+      onHeaderChange?.({
+        title: 'Correct and resubmit',
+        description: 'Correcting a rejected submission.',
+      });
+
       if (s.rejection) {
         setRejectionBanner({
-          byName: s.rejection.byName || '',
+          byName: s.rejection.byName || 'Admin',
           side: s.rejection.side === 'cto' ? 'CTO' : 'Admin',
           reason: s.rejection.reason || '',
         });
@@ -150,16 +229,19 @@ export default function MarkAttendance({ goHistory, who = 'marker' }) {
           url: u,
         })));
       }
+
+      try { sessionStorage.removeItem('ncc_resubmit'); } catch {}
+      setDraftBanner(false);
+      draftChecked.current = true;
     })();
     return () => { mounted = false; };
-  }, [meta, toast]);
+  }, [resubmitId, meta, onHeaderChange]);
 
-  // ── restore draft if saved for the same user ────────────────────────────────
+  // ── restore draft if saved for the same user (ignored while ?resubmit is present) ──
   useEffect(() => {
-    if (!authUid || draftChecked.current) return;
+    if (!authUid || draftChecked.current || resubmitId) return;
     draftChecked.current = true;
     if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return;
-    if (sessionStorage.getItem('ncc_resubmit')) return;
 
     try {
       const raw = sessionStorage.getItem(`ncc_draft_${authUid}`);
@@ -184,11 +266,11 @@ export default function MarkAttendance({ goHistory, who = 'marker' }) {
         }
       }
     } catch {}
-  }, [authUid]);
+  }, [authUid, resubmitId]);
 
-  // ── auto-save draft every second after a change ─────────────────────────────
+  // ── auto-save draft every second after a change (disabled while ?resubmit is present) ──
   useEffect(() => {
-    if (!authUid || done) return;
+    if (!authUid || done || resubmitId) return;
     if (!userInteracted.current) return;
     const t = setTimeout(() => {
       try {
@@ -207,7 +289,7 @@ export default function MarkAttendance({ goHistory, who = 'marker' }) {
       } catch {}
     }, 1000);
     return () => clearTimeout(t);
-  }, [authUid, date, activity, desc, years, marks, photos, done]);
+  }, [authUid, date, activity, desc, years, marks, photos, done, resubmitId]);
 
   function discardDraft() {
     if (authUid) {
@@ -222,6 +304,7 @@ export default function MarkAttendance({ goHistory, who = 'marker' }) {
   function startFresh() {
     setResubmitOf(null);
     setRejectionBanner(null);
+    setResubmitError(null);
     setDate(today);
     setActivity('Parade');
     setDesc('');
@@ -230,6 +313,8 @@ export default function MarkAttendance({ goHistory, who = 'marker' }) {
     setPhotos([]);
     setFilter('');
     setDone(null);
+    onHeaderChange?.(null);
+    cleanQuery();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -366,6 +451,14 @@ export default function MarkAttendance({ goHistory, who = 'marker' }) {
   };
   useEffect(() => () => photos.forEach(p => URL.revokeObjectURL(p.preview)), []); // eslint-disable-line
 
+  const loadExisting = useCallback(async (d = date) => {
+    if (!d) return;
+    const rAtt = await api(`/api/attendance?date=${d}`);
+    if (rAtt.ok && rAtt.data?.records) {
+      setExisting(Object.fromEntries(rAtt.data.records.map(x => [x.cadetId, x])));
+    }
+  }, [date]);
+
   // ── submit ───────────────────────────────────────────────────────────────────
   function problem() {
     if (!years.length) return 'Choose which years you are marking.';
@@ -425,6 +518,8 @@ export default function MarkAttendance({ goHistory, who = 'marker' }) {
       setDraftBanner(false);
 
       setDone({ ...r.data });
+      cleanQuery();
+      onHeaderChange?.(null);
       loadExisting();
     } catch {
       toast('No connection. Your attendance was NOT submitted. Check your internet and press Submit again.', 'err');
@@ -432,7 +527,9 @@ export default function MarkAttendance({ goHistory, who = 'marker' }) {
   }
 
   function reset() {
-    setResubmitOf(null); setRejectionBanner(null); setDone(null); setMarks({}); setPhotos([]); setYears([]); setDesc(''); setFilter('');
+    setResubmitOf(null); setRejectionBanner(null); setResubmitError(null); setDone(null); setMarks({}); setPhotos([]); setYears([]); setDesc(''); setFilter('');
+    onHeaderChange?.(null);
+    cleanQuery();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -449,7 +546,7 @@ export default function MarkAttendance({ goHistory, who = 'marker' }) {
       <p className="muted small mt-s">Only after {done.waitingFor?.length === 1 ? 'that approval' : 'both approve'} is it saved to the records{done.isHistorical ? '' : ', the parade report is e-mailed to Sir and absentees are notified'}.</p>
       <div className="row wrap mt" style={{ justifyContent: 'center' }}>
         <button className="btn btn-primary" onClick={reset}>Mark another group</button>
-        <button className="btn" onClick={goHistory}>{who === 'marker' ? 'View status' : 'Open approvals'}</button>
+        <button className="btn" onClick={() => { onHeaderChange?.(null); goHistory?.(); }}>{who === 'marker' ? 'View status' : 'Open approvals'}</button>
       </div>
     </div>
   );
@@ -479,6 +576,15 @@ export default function MarkAttendance({ goHistory, who = 'marker' }) {
           </div>
           <button type="button" className="btn btn-sm" onClick={discardDraft}>
             Discard draft
+          </button>
+        </div>
+      )}
+
+      {resubmitError && (
+        <div className="banner bad mb row between wrap" style={{ alignItems: 'center' }}>
+          <div className="grow">{resubmitError}</div>
+          <button type="button" className="btn btn-sm" onClick={() => { setResubmitError(null); cleanQuery(); }}>
+            Dismiss
           </button>
         </div>
       )}

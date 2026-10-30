@@ -18,6 +18,7 @@ vi.mock('next/navigation', () => {
   return {
     useRouter: () => stableRouter,
     usePathname: () => nav.path,
+    useSearchParams: () => new URLSearchParams(typeof window !== 'undefined' ? (window.location.search || (nav.path?.includes('?') ? nav.path.slice(nav.path.indexOf('?')) : '')) : ''),
     redirect: (url) => { nav.path = url; nav.replace(url); },
   };
 });

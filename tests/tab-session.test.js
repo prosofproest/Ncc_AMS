@@ -10,7 +10,7 @@ const { nav } = vi.hoisted(() => ({ nav: { replace: vi.fn(), push: vi.fn(), path
 const stableRouter = vi.hoisted(() => ({}));
 vi.mock('next/navigation', () => {
   Object.assign(stableRouter, { replace: nav.replace, push: nav.push });
-  return { useRouter: () => stableRouter, usePathname: () => nav.path };
+  return { useRouter: () => stableRouter, usePathname: () => nav.path, useSearchParams: () => new URLSearchParams(typeof window !== 'undefined' ? (window.location.search || (nav.path?.includes('?') ? nav.path.slice(nav.path.indexOf('?')) : '')) : '') };
 });
 vi.mock('next/link', async () => {
   const R = await import('react');

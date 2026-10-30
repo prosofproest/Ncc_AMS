@@ -42,7 +42,13 @@ export default function SettingsPanel() {
 
       <div className="card col" style={{ gap: 12 }}>
         <h2 className="h2">Automatic emails</h2>
-        {[['absenceMailEnabled', 'Absence notice to the cadet', 'A mail to each absent cadet (only if an email is in the sheet).'], ['changeMailEnabled', 'Change log to Sir + backup', 'Whenever attendance is edited, deleted, or a benefit is given.'], ['monthlyMailEnabled', 'Monthly summary to Sir + backup', 'On the 1st of each month, with the monthly report PDF.']].map(([k, t, d]) => (
+        {[
+          ['absenceMailEnabled', 'Absence notice to the cadet', 'A mail to each absent cadet (only if an email is in the sheet).'],
+          ['changeMailEnabled', 'Change log to Sir + backup', 'Whenever attendance is edited, deleted, or a benefit is given.'],
+          ['monthlyMailEnabled', 'Monthly summary to Sir + backup', 'On the 1st of each month, with the monthly report PDF.'],
+          ['notifyAdminOnReturn', 'E-mail the Administrator when the CTO returns a submission', 'Whenever the CTO returns a submission for correction.'],
+          ['notifyCtoOnAdminApproval', 'E-mail Sir when a submission reaches him for approval', 'Whenever an approved submission reaches the CTO stage.'],
+        ].map(([k, t, d]) => (
           <div key={k} className="row between"><div><div className="bold">{t}</div><div className="hint">{d}</div></div><Switch on={!!f[k]} onChange={v => set(k, v)} disabled={dis} label={t} /></div>))}
       </div>
 

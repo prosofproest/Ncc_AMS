@@ -10,6 +10,7 @@ import { sendChangeLog } from '@/lib/email';
 const PUBLIC = s => ({
   sirEmail: s.sirEmail, backupEmail: s.backupEmail, absentReasons: s.absentReasons,
   absenceMailEnabled: s.absenceMailEnabled, changeMailEnabled: s.changeMailEnabled, monthlyMailEnabled: s.monthlyMailEnabled,
+  notifyAdminOnReturn: s.notifyAdminOnReturn !== false, notifyCtoOnAdminApproval: s.notifyCtoOnAdminApproval === true,
   thresholdPct: s.thresholdPct, currentCycle: s.currentCycle, cycleLabel: s.cycleLabel, cycleStartedAt: s.cycleStartedAt, lastSheetImportAt: s.lastSheetImportAt,
   requirePhotos: s.requirePhotos !== false,
 });
@@ -39,7 +40,7 @@ export async function PUT(request) {
     if (!list.length) return NextResponse.json({ error: 'Keep at least one absence reason.' }, { status: 400 });
     patch.absentReasons = list;
   }
-  for (const k of ['absenceMailEnabled', 'changeMailEnabled', 'monthlyMailEnabled']) if (b[k] !== undefined) patch[k] = b[k] === true;
+  for (const k of ['absenceMailEnabled', 'changeMailEnabled', 'monthlyMailEnabled', 'notifyAdminOnReturn', 'notifyCtoOnAdminApproval']) if (b[k] !== undefined) patch[k] = b[k] === true;
   if (b.requirePhotos !== undefined) {
     patch.requirePhotos = b.requirePhotos === true;
   }

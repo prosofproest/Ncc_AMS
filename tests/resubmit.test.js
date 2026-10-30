@@ -20,6 +20,7 @@ vi.mock('next/navigation', () => {
   return {
     useRouter: () => stableRouter,
     usePathname: () => nav.path,
+    useSearchParams: () => new URLSearchParams(typeof window !== 'undefined' ? (window.location.search || (nav.path?.includes('?') ? nav.path.slice(nav.path.indexOf('?')) : '')) : ''),
     redirect: (url) => { nav.path = url; nav.replace(url); }
   };
 });
@@ -102,6 +103,7 @@ beforeAll(async () => {
 describe('Part 1, 2, 3, 4: Resubmit, Permissions, CTO Cadets, Sheets Change Log', () => {
   let rejectedId;
   let resubmittedId;
+  let sub2SessionId;
   const testDate = '2026-10-15'; // historical date so GPS is not mandatory
 
   it('1. Marker submits, CTO rejects -> Change Log has Rejected entry, cadets unlocked', async () => {
@@ -121,8 +123,8 @@ describe('Part 1, 2, 3, 4: Resubmit, Permissions, CTO Cadets, Sheets Change Log'
     expect(sub.pending).toBe(true);
     rejectedId = sub.sessionId;
 
-    // Reject as CTO
-    await signIn('cto_resub', 'Sir@12345');
+    // Reject as Admin (marker submissions start at stage 'admin')
+    await signIn('admin_resub', 'Admin@123');
     const rej = await api('/api/approvals', 'POST', {
       id: rejectedId,
       action: 'reject',
@@ -136,8 +138,8 @@ describe('Part 1, 2, 3, 4: Resubmit, Permissions, CTO Cadets, Sheets Change Log'
     const rejDoc = (await db.collection('pending_sessions').doc(rejectedId).get()).data();
     expect(rejDoc.state).toBe('rejected');
     expect(rejDoc.rejection).toMatchObject({
-      byName: 'Lt. Sir',
-      side: 'cto',
+      byName: 'Admin Officer',
+      side: 'admin',
       reason: 'Photo blurry and wrong date'
     });
 
@@ -145,10 +147,10 @@ describe('Part 1, 2, 3, 4: Resubmit, Permissions, CTO Cadets, Sheets Change Log'
     const changes = globalThis.__sheets.tab(TABS.changes)?.rows || [];
     const lastRow = changes[changes.length - 1];
     expect(lastRow[1]).toBe('Rejected');
-    expect(lastRow[2]).toBe('Lt. Sir');
+    expect(lastRow[2]).toBe('Admin Officer');
     expect(lastRow[3]).toBe(testDate);
     expect(lastRow[5]).toBe('Parade - Year 1');
-    expect(lastRow[6]).toBe('Pending');
+    expect(lastRow[6]).toBe('With Administrator');
     expect(lastRow[7]).toBe('Rejected');
     expect(lastRow[8]).toBe('Photo blurry and wrong date');
   });
@@ -214,8 +216,8 @@ describe('Part 1, 2, 3, 4: Resubmit, Permissions, CTO Cadets, Sheets Change Log'
     const newDoc = (await db.collection('pending_sessions').doc(resubmittedId).get()).data();
     expect(newDoc.resubmitOf).toBe(rejectedId);
     expect(newDoc.previousRejection).toMatchObject({
-      byName: 'Lt. Sir',
-      side: 'cto',
+      byName: 'Admin Officer',
+      side: 'admin',
       reason: 'Photo blurry and wrong date'
     });
 
@@ -346,14 +348,18 @@ describe('Part 1, 2, 3, 4: Resubmit, Permissions, CTO Cadets, Sheets Change Log'
     await u.click(itemCard);
 
     const dlg = await screen.findByRole('dialog');
-    expect(within(dlg).getByText(/Earlier rejected by Lt\. Sir: 'Photo blurry and wrong date'/)).toBeTruthy();
+    expect(within(dlg).getByText(/Earlier rejected by Admin Officer: 'Photo blurry and wrong date'/)).toBeTruthy();
 
     // Admin has editable roster and P/A buttons
     expect(within(dlg).getAllByRole('button', { name: 'P' }).length).toBeGreaterThan(0);
   });
 
-  it('8. UI: ApprovalsPanel for CTO is READ-ONLY with the exact notification sentence', async () => {
+  it('8. UI: ApprovalsPanel for CTO is READ-ONLY with the exact notification sentence and Return to Administrator button', async () => {
     const u = userEvent.setup({ delay: null });
+    // Admin approves first -> moves stage to 'cto'
+    await signIn('admin_resub', 'Admin@123');
+    await api('/api/approvals', 'POST', { id: resubmittedId, action: 'approve' });
+
     await signIn('cto_resub', 'Sir@12345');
     mountCto('approvals');
 
@@ -365,7 +371,7 @@ describe('Part 1, 2, 3, 4: Resubmit, Permissions, CTO Cadets, Sheets Change Log'
 
     const dlg = await screen.findByRole('dialog');
     // Banner sentence displayed once above roster
-    expect(within(dlg).getByText('Only the Administrator can correct attendance. You can approve or reject.')).toBeTruthy();
+    expect(within(dlg).getByText('Review the roll and approve, or return to the Administrator if corrections are needed.')).toBeTruthy();
 
     // No P or A buttons, no reason dropdowns, no "Save edits"
     expect(within(dlg).queryByRole('button', { name: 'P' })).toBeNull();
@@ -373,8 +379,8 @@ describe('Part 1, 2, 3, 4: Resubmit, Permissions, CTO Cadets, Sheets Change Log'
     expect(within(dlg).queryByRole('combobox')).toBeNull();
     expect(within(dlg).queryByRole('button', { name: /Save.*edit/i })).toBeNull();
 
-    // Approve and Reject buttons stay for CTO
-    expect(within(dlg).getByRole('button', { name: /Reject…/i })).toBeTruthy();
+    // Approve and Return to Administrator buttons stay for CTO
+    expect(within(dlg).getByRole('button', { name: /Return to Administrator/i })).toBeTruthy();
     expect(within(dlg).getByRole('button', { name: /^Approve$/i })).toBeTruthy();
   });
 
@@ -394,9 +400,10 @@ describe('Part 1, 2, 3, 4: Resubmit, Permissions, CTO Cadets, Sheets Change Log'
       ]
     });
     expect(sub2.ok).toBe(true);
-    await signIn('cto_resub', 'Sir@12345');
+    sub2SessionId = sub2.sessionId;
+    await signIn('admin_resub', 'Admin@123');
     await api('/api/approvals', 'POST', {
-      id: sub2.sessionId,
+      id: sub2SessionId,
       action: 'reject',
       reason: 'Photo blurry and wrong date'
     });
@@ -404,8 +411,8 @@ describe('Part 1, 2, 3, 4: Resubmit, Permissions, CTO Cadets, Sheets Change Log'
     // Marker signs in
     await signIn('mk_resub1', 'Marker@123');
 
-    // Store sub2.sessionId in sessionStorage key ncc_resubmit
-    sessionStorage.setItem('ncc_resubmit', sub2.sessionId);
+    // Store sub2SessionId in sessionStorage key ncc_resubmit
+    sessionStorage.setItem('ncc_resubmit', sub2SessionId);
 
     cleanup();
     const { UIProvider } = await import('@/app/components/ui');
@@ -415,7 +422,7 @@ describe('Part 1, 2, 3, 4: Resubmit, Permissions, CTO Cadets, Sheets Change Log'
     expect(sessionStorage.getItem('ncc_resubmit')).toBeNull();
 
     // Banner should be visible
-    const banner = await screen.findByText(/Rejected by Lt\. Sir \(CTO\): 'Photo blurry and wrong date'\. Correct what is needed and submit again\./);
+    const banner = await screen.findByText(/Rejected by Admin Officer \(Admin\): 'Photo blurry and wrong date'\. Correct what is needed and submit again\./);
     expect(banner).toBeTruthy();
 
     // Activity description should be pre-filled
@@ -444,7 +451,7 @@ describe('Part 1, 2, 3, 4: Resubmit, Permissions, CTO Cadets, Sheets Change Log'
     await u.click(startFreshBtn);
 
     // Banner is removed
-    expect(screen.queryByText(/Rejected by Lt\. Sir/)).toBeNull();
+    expect(screen.queryByText(/Rejected by Admin Officer/)).toBeNull();
     // Description is cleared
     expect(descInput.value).toBe('');
     // Photos cleared
@@ -463,8 +470,8 @@ describe('Part 1, 2, 3, 4: Resubmit, Permissions, CTO Cadets, Sheets Change Log'
 
     await u.click(btn);
 
-    expect(nav.path).toBe('/dashboard/marker/mark');
+    expect(nav.path).toBe(`/dashboard/marker/mark?resubmit=${encodeURIComponent(sub2SessionId)}`);
     // MarkAttendance mounts and displays the rejection banner
-    expect(await screen.findByText(/Rejected by Lt\. Sir \(CTO\): 'Photo blurry and wrong date'/)).toBeTruthy();
+    expect(await screen.findByText(/Rejected by Admin Officer \(Admin\): 'Photo blurry and wrong date'/)).toBeTruthy();
   });
 });

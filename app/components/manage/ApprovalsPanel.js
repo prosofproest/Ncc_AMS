@@ -9,9 +9,15 @@ import { fmtDate, fmtDateTimeIST } from '@/lib/time';
 const OTHER = '__other__';
 const SIDE = { admin: 'Admin', cto: 'CTO' };
 
-function Chain({ s }) {
-  const a = s.approvals || {};
-  return <span className="row gap-s wrap">{['admin', 'cto'].map(k => <span key={k} className={`badge ${a[k] ? 'b-green' : 'b-amber'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }} title={a[k] ? `${a[k].byName} · ${fmtDateTimeIST(a[k].at)}` : 'Waiting'}>{a[k] ? <Icon name="check" size={12} /> : <Icon name="clock" size={12} />} {SIDE[k]}</span>)}</span>;
+function StageChip({ s, side }) {
+  if (s.state === 'rejected') return <span className="badge b-red">Rejected by {s.rejection?.byName}</span>;
+  const stage = s.stage || (s.approvals?.admin ? 'cto' : 'admin');
+  if (stage === 'admin' && s.returnedByCto && side === 'admin') {
+    return <span className="badge b-amber">Returned by CTO</span>;
+  }
+  return (
+    <span className="badge b-blue">{stage === 'cto' ? 'With CTO' : 'With Administrator'}</span>
+  );
 }
 
 // Everything the Admin / CTO needs to review a submission before it becomes a real record
@@ -40,29 +46,42 @@ export default function ApprovalsPanel({ onChanged }) {
     const r = await api('/api/approvals', { method: 'PUT', body: { id: open.id, note, changes: dirty.map(x => ({ cadet_id: x.cadetId, status: cur(x).status, reason: cur(x).status === 'Absent' ? reasonOf(cur(x)) : '' })) } });
     setBusy('');
     if (!r.ok) return toast(r.error, 'err');
-    toast(`Saved ${r.data.changed} change(s). Your approval is recorded; the ${side === 'admin' ? 'CTO' : 'Admin'} must approve again.`, 'ok', 6000); done();
+    toast(`Saved ${r.data.changed} change(s).`, 'ok', 4000);
+    const up = await api(`/api/approvals?id=${open.id}`);
+    if (up.ok) setDetail(up.data.submission);
+    setEdits({});
+    setNote('');
+    refresh();
   }
   async function approve() {
     if (dirty.length) return toast('Save your edits first (or discard them), then approve.', 'err');
-    const other = SIDE[side === 'admin' ? 'cto' : 'admin'];
-    const will = detail.approvals?.[side === 'admin' ? 'cto' : 'admin'];
-    if (!await confirm({ title: will ? 'Approve and finalise?' : 'Approve this attendance?', confirmText: will ? 'Approve & finalise' : 'Approve',
-      message: will ? `You are the last approval. It will be saved to the records, counted, added to the Google Sheet, and the parade report (PDF) will be e-mailed to Sir + backup. Absentees with an e-mail are notified.`
-        : `Your approval is recorded. It is saved and e-mailed only after the ${other} also approves.` })) return;
+    if (side === 'cto') {
+      if (!await confirm({
+        title: 'Approve and finalise?',
+        confirmText: 'Approve & finalise',
+        message: 'You are the last approval. It will be saved to the records, counted, added to the Google Sheet, and the parade report (PDF) will be e-mailed to Sir + backup. Absentees with an e-mail are notified.'
+      })) return;
+    }
     setBusy('approve');
     const r = await api('/api/approvals', { method: 'POST', body: { id: open.id, action: 'approve' } });
     setBusy('');
     if (!r.ok) { toast(r.error, 'err'); if (r.status === 404 || r.status === 409) done(); return; }
-    toast(r.data.final ? 'Approved and saved. Parade report is being e-mailed.' : `Approved. Waiting for the ${SIDE[r.data.waitingFor?.[0]] || other}.`, 'ok', 5000); done();
+    toast(r.data.final ? 'Approved and saved. Parade report is being e-mailed.' : 'Approved. Waiting for the CTO.', 'ok', 5000); done();
   }
   async function doReject() {
-    if (!reason.trim()) return toast('Write a short reason so the marker can correct it.', 'err');
+    if (!reason.trim()) {
+      return toast(side === 'cto' ? 'Write a reason for returning to the Administrator.' : 'Write a short reason so the marker can correct it.', 'err');
+    }
     setBusy('reject');
     const r = await api('/api/approvals', { method: 'POST', body: { id: open.id, action: 'reject', reason } });
     setBusy('');
     if (!r.ok) return toast(r.error, 'err');
-    toast('Rejected. The marker will see your reason.', 'ok'); done();
+    toast(side === 'cto' ? 'Returned to Administrator.' : 'Rejected. The marker will see your reason.', 'ok');
+    done();
   }
+
+  const myStage = detail?.state === 'pending' && detail?.stage === side;
+  const editable = isAdmin && myStage;
 
   return (
     <div className="stack">
@@ -83,7 +102,7 @@ export default function ApprovalsPanel({ onChanged }) {
               <span className="badge b-red">{s.absent} A</span>
               {s.previousRejection && <span className="badge b-blue">Resubmitted</span>}
               {s.photosRequired === false && <span className="badge b-gray">No photo</span>}
-              {state === 'pending' ? <Chain s={s} /> : <span className="badge b-red">Rejected by {s.rejection?.byName}</span>}
+              <StageChip s={s} side={side} />
             </div>
             {state === 'rejected' && <div className="small muted">“{s.rejection?.reason}”</div>}
             <div className="row between" style={{ width: '100%', alignItems: 'center', marginTop: 4 }}>
@@ -141,16 +160,70 @@ export default function ApprovalsPanel({ onChanged }) {
           >
             {busy === open.id ? <Spinner /> : 'Delete'}
           </button>
-        )) : (!rejecting && <>
-          <button className="btn btn-danger btn-sm" onClick={() => setRejecting(true)} disabled={!!busy}>Reject…</button>
-          {isAdmin && dirty.length > 0 && <button className="btn" onClick={saveEdits} disabled={!!busy}>{busy === 'edit' ? <Spinner /> : `Save ${dirty.length} edit${dirty.length > 1 ? 's' : ''}`}</button>}
-          {detail.approvals?.[side] ? <span className="badge b-green" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="check" size={12} /> You approved</span> : <button className="btn btn-success" onClick={approve} disabled={!!busy || dirty.length > 0}>{busy === 'approve' ? <Spinner /> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={16} /> Approve</span>}</button>}</>))}>
+        )) : (!rejecting && (
+          myStage ? (
+            side === 'admin' ? (
+              <>
+                <button className="btn btn-danger btn-sm" onClick={() => setRejecting(true)} disabled={!!busy}>Reject and send to marker</button>
+                {dirty.length > 0 && <button className="btn" onClick={saveEdits} disabled={!!busy}>{busy === 'edit' ? <Spinner /> : `Save edits (${dirty.length})`}</button>}
+                <button className="btn btn-success" onClick={approve} disabled={!!busy || dirty.length > 0}>{busy === 'approve' ? <Spinner /> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={16} /> Approve</span>}</button>
+              </>
+            ) : (
+              <>
+                <button className="btn btn-danger btn-sm" onClick={() => setRejecting(true)} disabled={!!busy}>Return to Administrator</button>
+                <button className="btn btn-success" onClick={approve} disabled={!!busy}>{busy === 'approve' ? <Spinner /> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={16} /> Approve</span>}</button>
+              </>
+            )
+          ) : (
+            <span className="muted small">This is with the {detail.stage === 'cto' ? 'CTO' : 'Administrator'} now.</span>
+          )
+        )))}>
         {!open ? null : !detail ? <Skeleton n={4} h={56} /> : (
           <div>
             <div className="timeline mb">
               <div className="done"><div className="eyebrow">Marked by</div><div className="bold">{detail.markedByName}</div><div className="small muted">{fmtDateTimeIST(detail.createdAt)}</div></div>
-              {['admin', 'cto'].map(k => <div key={k} className={detail.approvals?.[k] ? 'done' : ''}><div className="eyebrow">{SIDE[k]} approval</div>{detail.approvals?.[k] ? <><div className="bold">{detail.approvals[k].byName}</div><div className="small muted">{fmtDateTimeIST(detail.approvals[k].at)}</div></> : <div className="bold" style={{ color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="clock" size={14} /> Waiting</div>}</div>)}
+              <div className={detail.approvals?.admin ? 'done' : ''}>
+                <div className="eyebrow">Administrator</div>
+                {detail.approvals?.admin ? (
+                  <><div className="bold">{detail.approvals.admin.byName}</div><div className="small muted">{fmtDateTimeIST(detail.approvals.admin.at)}</div></>
+                ) : (
+                  <div className="bold" style={{ color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="clock" size={14} /> Waiting</div>
+                )}
+              </div>
+              <div className={detail.approvals?.cto ? 'done' : ''}>
+                <div className="eyebrow">CTO</div>
+                {detail.approvals?.cto ? (
+                  <><div className="bold">{detail.approvals.cto.byName}</div><div className="small muted">{fmtDateTimeIST(detail.approvals.cto.at)}</div></>
+                ) : (
+                  <div className="bold" style={{ color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="clock" size={14} /> Waiting</div>
+                )}
+              </div>
             </div>
+
+            {Array.isArray(detail.history) && detail.history.length > 0 && (
+              <div className="card tight mb col" style={{ gap: 6, fontSize: 13 }}>
+                <div className="eyebrow">History</div>
+                <div className="col" style={{ gap: 4 }}>
+                  {detail.history.map((h, i) => (
+                    <div key={i} className="row between wrap small">
+                      <div>
+                        <b>{h.byName}</b> ({h.role === 'admin' ? 'Administrator' : h.role === 'cto' ? 'CTO' : 'Marker'})
+                        {' — '}
+                        <span className="muted">{h.action}{h.note ? `: “${h.note}”` : ''}</span>
+                      </div>
+                      <span className="tiny muted">{fmtDateTimeIST(h.at)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {detail.returnedByCto && (
+              <div className="banner warn mb">
+                Returned by {detail.returnedByCto.byName}: &apos;{detail.returnedByCto.reason}&apos;. Correct it or reject it to the marker.
+              </div>
+            )}
+
             <div className="row wrap mb"><span className="badge b-blue">{detail.groupLabel}</span><span className="badge b-green">{detail.present} present</span><span className="badge b-red">{detail.absent} absent</span>
               {detail.photosRequired === false && <span className="badge b-gray">No photo</span>}
               {detail.geoLat && <a className="badge b-gray" target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${detail.geoLat},${detail.geoLng}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="map-pin" size={12} /> Location</a>}
@@ -159,17 +232,36 @@ export default function ApprovalsPanel({ onChanged }) {
               <div className="small muted mb">Earlier rejected by {detail.previousRejection.byName}: &apos;{detail.previousRejection.reason}&apos;</div>
             )}
             {detail.state === 'rejected' && <div className="banner bad mb">Rejected by {detail.rejection?.byName}: “{detail.rejection?.reason}”</div>}
-            {rejecting && <div className="card tight mb col" style={{ gap: 10 }}><div className="bold">Reject this submission</div><input className="input" maxLength={200} autoFocus placeholder="Reason (the marker will see this)" value={reason} onChange={e => setReason(e.target.value)} />
-              <div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn" onClick={() => setRejecting(false)}>Cancel</button><button className="btn btn-danger" onClick={doReject} disabled={busy === 'reject'}>{busy === 'reject' ? <Spinner /> : 'Reject'}</button></div></div>}
+            {rejecting && (
+              <div className="card tight mb col" style={{ gap: 10 }}>
+                <div className="bold">{side === 'cto' ? 'Return to Administrator' : 'Reject and send to marker'}</div>
+                <input
+                  className="input"
+                  maxLength={200}
+                  autoFocus
+                  placeholder={side === 'cto' ? 'Reason for returning to Administrator' : 'Reason (the marker will see this)'}
+                  value={reason}
+                  onChange={e => setReason(e.target.value)}
+                />
+                <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+                  <button className="btn" onClick={() => setRejecting(false)}>Cancel</button>
+                  <button className="btn btn-danger" onClick={doReject} disabled={busy === 'reject'}>
+                    {busy === 'reject' ? <Spinner /> : side === 'cto' ? 'Return to Administrator' : 'Reject and send to marker'}
+                  </button>
+                </div>
+              </div>
+            )}
             {detail.state !== 'rejected' && (
               <div className="banner info mb">
-                {isAdmin
-                  ? 'Check the roll. Tap P / A to correct a mistake (editing records your approval and asks the CTO to look again).'
-                  : 'Only the Administrator can correct attendance. You can approve or reject.'}
+                {!myStage
+                  ? `Waiting for the ${detail.stage === 'cto' ? 'CTO' : 'Administrator'}.`
+                  : isAdmin
+                    ? 'Check the roll. Tap P / A to correct a mistake, or approve/reject.'
+                    : 'Review the roll and approve, or return to the Administrator if corrections are needed.'}
               </div>
             )}
             {[...detail.records].sort((a, b) => (a.cadetYear || 9) - (b.cadetYear || 9) || a.cadetName.localeCompare(b.cadetName)).map(r => {
-              const e = cur(r), editable = isAdmin && detail.state === 'pending';
+              const e = cur(r);
               return (
                 <div key={r.cadetId} className={`item${e.status === 'Absent' ? ' absent' : ''}`} style={{ flexWrap: 'wrap' }}>
                   <div className="grow"><div className="name">{r.cadetName}{dirty.includes(r) && <span className="badge b-amber" style={{ marginLeft: 8 }}>changed</span>}</div><div className="sub">{r.cadetRegNo || 'No Reg No.'} · Year {r.cadetYear}{e.status === 'Absent' && !editable ? ` · ${r.reason || 'no reason'}` : ''}</div></div>

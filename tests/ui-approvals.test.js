@@ -18,6 +18,7 @@ vi.mock('next/navigation', () => {
   return {
     useRouter: () => stableRouter,
     usePathname: () => nav.path,
+    useSearchParams: () => new URLSearchParams(typeof window !== 'undefined' ? (window.location.search || (nav.path?.includes('?') ? nav.path.slice(nav.path.indexOf('?')) : '')) : ''),
     redirect: (url) => { nav.path = url; nav.replace(url); }
   };
 });
@@ -120,12 +121,15 @@ describe('Approvals tab — Admin and CTO', () => {
     await u.click(within(rahul).getByRole('button', { name: 'A' }));
     const sel = within(rahul).getByRole('combobox'); await u.selectOptions(sel, 'Late arrival');
     expect(within(dlg).getByRole('button', { name: /^Approve$/ }).disabled).toBe(true);        // must save the edit first
-    await u.click(within(dlg).getByRole('button', { name: /Save 1 edit/ }));
-    await screen.findByText(/Your approval is recorded; the CTO must approve again/);
+    await u.click(within(dlg).getByRole('button', { name: /Save edits/ }));
+    await screen.findByText(/Saved 1 change/);
+    // Administrator presses Approve to forward to CTO
+    await u.click(within(dlg).getByRole('button', { name: /^Approve$/ }));
+    await screen.findByText(/Approved\. Waiting for the CTO\./);
     expect((await db.collection('pending_sessions').doc(pendingId).get()).data()).toMatchObject({ present: 1, absent: 2, waitingFor: ['cto'] });
     await wait(() => expect(screen.queryByRole('dialog')).toBeNull());
     // Admin sees it is no longer waiting for them
-    await wait(() => expect(screen.queryByText('Needs you')).toBeNull(), { timeout: 12000 });
+    await wait(() => expect(within(card).queryByText('Needs you')).toBeNull(), { timeout: 12000 });
     expect(db.all('attendance').length).toBe(0); expect(globalThis.__mail.length).toBe(0);
 
     // ── the CTO ──
@@ -134,7 +138,7 @@ describe('Approvals tab — Admin and CTO', () => {
     await navLink(u, /Approvals/);
     await u.click((await screen.findByText('Needs you')).closest('button'));
     const d2 = await screen.findByRole('dialog'); await within(d2).findByText('Priya Nair');
-    expect(within(d2).getByText('Admin Officer')).toBeTruthy();                                  // Admin's approval is shown
+    expect(within(d2).getAllByText('Admin Officer').length).toBeGreaterThanOrEqual(1);                                  // Admin's approval is shown
     await u.click(within(d2).getByRole('button', { name: /^Approve$/ }));
     const conf = await screen.findByText('Approve and finalise?'); expect(conf).toBeTruthy();
     await u.click(screen.getByRole('button', { name: 'Approve & finalise' }));
@@ -151,12 +155,12 @@ describe('Approvals tab — Admin and CTO', () => {
   it('reject with a reason → listed under Rejected, the marker sees the reason', async () => {
     const u = userEvent.setup({ delay: null });
     const id = await submitAsMarker(day(2), [1], [['c0', 'Present'], ['c1', 'Present']]);
-    await signIn('sir', 'Sir@12345'); mountCto('overview'); await navLink(u, /Approvals/);
+    await signIn('admin', 'Admin@123'); mountAdmin('overview'); await navLink(u, /Approvals/);
     await u.click((await screen.findByText('Needs you', {}, { timeout: 10000 })).closest('button'));
     const dlg = await screen.findByRole('dialog'); await within(dlg).findByText('Arjun Sharma');
-    await u.click(within(dlg).getByRole('button', { name: /Reject…/ }));
+    await u.click(within(dlg).getByRole('button', { name: /Reject and send to marker/ }));
     await u.type(within(dlg).getByPlaceholderText(/Reason \(the marker will see this\)/), 'Wrong date');
-    await u.click(within(dlg).getByRole('button', { name: /^Reject$/ }));
+    await u.click(within(dlg).getByRole('button', { name: /Reject and send to marker/ }));
     await screen.findByText(/Rejected\. The marker will see your reason/);
     await u.click(await screen.findByRole('button', { name: 'Rejected' }));
     expect(await screen.findByText(/“Wrong date”/)).toBeTruthy();
@@ -181,7 +185,7 @@ describe('Approvals tab — Admin and CTO', () => {
     const p = db.all('pending_sessions').find(x => x.data.date === day(3)).data;
     expect(p).toMatchObject({ markerRole: 'admin', waitingFor: ['cto'] }); expect(p.approvals.admin.byName).toBe('Admin Officer');
     await u.click(screen.getByRole('button', { name: /Open approvals/ }));
-    await screen.findByText(/Year 2 · by Admin Officer \(Admin\)|Year 2/, { selector: '.sub' });
-    expect(screen.queryByText('Needs you')).toBeNull();                                          // nothing for the Admin to do on their own submission
+    const card = (await screen.findByText(/Year 2 · by Admin Officer \(Admin\)|Year 2/, { selector: '.sub' })).closest('button');
+    expect(within(card).queryByText('Needs you')).toBeNull();                                          // nothing for the Admin to do on their own submission
   });
 });
