@@ -49,6 +49,7 @@ import {
   Upload,
   WifiOff,
   Send,
+  HelpCircle,
 } from 'lucide-react';
 
 const ICONS = {
@@ -101,6 +102,7 @@ const ICONS = {
   'upload': Upload,
   'wifi-off': WifiOff,
   'send': Send,
+  'help-circle': HelpCircle,
 };
 
 export default function Icon({ name, size = 18, strokeWidth = 1.75, className = '', ...props }) {

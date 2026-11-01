@@ -80,6 +80,25 @@ Fix every ❌ before continuing. (The file must be named `.env.local` and sit ne
 | Slow responses | Firestore not in Mumbai; compare the *Database read* time in **System health** |
 | Photos fail | `CLOUDINARY_*` values; photos are compressed on the phone, but a >4 MB photo from an old browser can still fail |
 | "Unauthorized" on the cron job | `CRON_SECRET` missing in Vercel |
+## If the administrator is locked out
+
+If an administrator or user forgets their password or gets locked out:
+
+```bash
+NEW_PASSWORD='your-new-password' npm run reset-password -- <username | e-mail | regNo> --yes
+```
+
+Example:
+```bash
+NEW_PASSWORD='NewPassword123' npm run reset-password -- admin --yes
+```
+
+The script:
+1. Looks up the account (username lower-case, e-mail lower-case, regNo upper-case) and displays the user name and role.
+2. Refuses if the account is not found or if several accounts match.
+3. Requires the `--yes` confirmation flag and requires `NEW_PASSWORD` of at least 8 characters from the environment (never as an argument, never printed).
+4. Stores a bcrypt (cost 10) hash, sets `mustChangePassword` to true, `failedLogins` to 0, `lockedUntil` to null, and `tokenVersion` to `Date.now()` (signing out all active sessions).
+5. Writes an audit log entry (`type: 'password-reset'`, `byName: 'recovery script'`).
 
 ## Notes
 

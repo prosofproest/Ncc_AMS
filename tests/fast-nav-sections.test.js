@@ -96,7 +96,7 @@ describe('PART A: Static Section Pages & generateStaticParams', () => {
     const expectedFromNav = adminNavGroups
       .flatMap(g => g.items)
       .map(i => i.href.split('/').pop())
-      .filter(s => s !== 'calendar'); // calendar is /dashboard/calendar
+      .filter(s => s !== 'calendar' && s !== 'help'); // calendar and help are shared routes
 
     for (const sec of expectedFromNav) {
       expect(sections).toContain(sec);
@@ -117,7 +117,8 @@ describe('PART A: Static Section Pages & generateStaticParams', () => {
     const ctoNavGroups = navFor({ role: 'cto', permissions: DEFAULT_PERMISSIONS.cto });
     const expectedFromNav = ctoNavGroups
       .flatMap(g => g.items)
-      .map(i => i.href.split('/').pop());
+      .map(i => i.href.split('/').pop())
+      .filter(s => s !== 'help'); // help is /dashboard/help
 
     for (const sec of expectedFromNav) {
       expect(sections).toContain(sec);

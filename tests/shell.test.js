@@ -96,14 +96,14 @@ beforeAll(async () => {
 });
 
 describe('Shell & Navigation Architecture', () => {
-  it('a) nav items per role (admin 14, CTO subset, marker 2, cadet 3) in the right groups', () => {
-    // Admin: 14 items in Attendance, People and reports, System
+  it('a) nav items per role (admin 15, CTO subset, marker 3, cadet 4) in the right groups', () => {
+    // Admin: 15 items in Attendance, People and reports, System
     const adminUser = { role: 'admin', permissions: DEFAULT_PERMISSIONS.admin };
     const adminGroups = navFor(adminUser);
     expect(adminGroups.map(g => g.title)).toEqual(['Attendance', 'People and reports', 'System']);
     const adminItems = adminGroups.flatMap(g => g.items);
-    expect(adminItems.length).toBe(14);
-    expect(adminGroups[0].items.map(i => i.id)).toEqual(['overview', 'approvals', 'mark', 'records', 'calendar']);
+    expect(adminItems.length).toBe(15);
+    expect(adminGroups[0].items.map(i => i.id)).toEqual(['overview', 'approvals', 'mark', 'records', 'calendar', 'help']);
     expect(adminGroups[1].items.map(i => i.id)).toEqual(['people', 'reports', 'benefits']);
     expect(adminGroups[2].items.map(i => i.id)).toEqual(['sheet', 'settings', 'promotion', 'roles', 'health', 'log']);
 
@@ -111,25 +111,25 @@ describe('Shell & Navigation Architecture', () => {
     const ctoUser = { role: 'cto', permissions: DEFAULT_PERMISSIONS.cto };
     const ctoGroups = navFor(ctoUser);
     const ctoItems = ctoGroups.flatMap(g => g.items);
-    expect(ctoItems.length).toBe(8);
+    expect(ctoItems.length).toBe(9);
     for (const item of ctoItems) {
       expect(adminItems.some(ai => ai.id === item.id)).toBe(true);
     }
     expect(ctoGroups.find(g => g.title === 'People and reports').items.find(i => i.id === 'people').label).toBe('Cadets');
 
-    // Marker: 2 items
+    // Marker: 3 items (includes help)
     const markerUser = { role: 'marker', permissions: DEFAULT_PERMISSIONS.marker };
     const markerGroups = navFor(markerUser);
     const markerItems = markerGroups.flatMap(g => g.items);
-    expect(markerItems.length).toBe(2);
-    expect(markerItems.map(i => i.id)).toEqual(['mark', 'history']);
+    expect(markerItems.length).toBe(3);
+    expect(markerItems.map(i => i.id)).toEqual(['mark', 'history', 'help']);
 
-    // Cadet: 3 items
+    // Cadet: 4 items (includes help)
     const cadetUser = { role: 'cadet', permissions: DEFAULT_PERMISSIONS.cadet };
     const cadetGroups = navFor(cadetUser);
     const cadetItems = cadetGroups.flatMap(g => g.items);
-    expect(cadetItems.length).toBe(3);
-    expect(cadetItems.map(i => i.id)).toEqual(['cadet', 'leaderboard', 'calendar']);
+    expect(cadetItems.length).toBe(4);
+    expect(cadetItems.map(i => i.id)).toEqual(['cadet', 'leaderboard', 'calendar', 'help']);
   });
 
   it('b) active item has aria-current', async () => {

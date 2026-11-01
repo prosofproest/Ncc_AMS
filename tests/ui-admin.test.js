@@ -119,7 +119,7 @@ describe('administrator', () => {
     await wait(() => expect(env.speech).toEqual(['Jai Hind. Welcome, Admin Officer. Administrator access granted.']));
     const mainNav = await screen.findByRole('navigation', { name: /Main/i });
     const names = within(mainNav).getAllByRole('link').map(l => l.querySelector('.nav-label')?.textContent || l.textContent.trim());
-    expect(names).toEqual(['Overview', 'Approvals', 'Mark attendance', 'Records', 'Calendar', 'People', 'Reports', 'Benefits', 'Google Sheet', 'Settings', 'Promotion', 'Roles', 'System health', 'Change log']);
+    expect(names).toEqual(['Overview', 'Approvals', 'Mark attendance', 'Records', 'Calendar', 'Help', 'People', 'Reports', 'Benefits', 'Google Sheet', 'Settings', 'Promotion', 'Roles', 'System health', 'Change log']);
     mountAdmin('overview');                                                      // same sign-in session: no repeat
     await screen.findByRole('heading', { name: /Overview/ }); expect(env.speech.length).toBe(1);
   });
@@ -247,7 +247,7 @@ describe('Sir (CTO), cadet and shared pages', () => {
     await screen.findByRole('heading', { name: /Overview/ });
     const mainNav = await screen.findByRole('navigation', { name: /Main/i });
     const names = within(mainNav).getAllByRole('link').map(l => l.querySelector('.nav-label')?.textContent || l.textContent.trim());
-    expect(names).toEqual(['Overview', 'Approvals', 'Mark attendance', 'Records', 'Cadets', 'Reports', 'Benefits', 'Change log']);
+    expect(names).toEqual(['Overview', 'Approvals', 'Mark attendance', 'Records', 'Help', 'Cadets', 'Reports', 'Benefits', 'Change log']);
     expect(env.speech.length).toBe(0);                                                         // no voice for Sir
     await navLink(u, 'Cadets'); await screen.findByText('Arjun Sharma'); expect(screen.queryByRole('button', { name: /Add account/ })).toBeNull(); expect(screen.queryAllByRole('switch').length).toBe(0);
   });

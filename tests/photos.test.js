@@ -205,6 +205,28 @@ describe('Cloudinary photo upload & emergency switch', () => {
       expect(globalThis.__mail.length).toBe(1);
       expect(globalThis.__mail[0].html).toContain('No parade photo');
 
+      // Verify parade photos in e-mails without Cloudinary transformations
+      globalThis.__mail.length = 0;
+      await sendParadeReport({
+        session: {
+          ...sessionDoc,
+          photoUrls: [
+            'https://res.cloudinary.com/demo/image/upload/v1234567/parade1.jpg',
+            'https://res.cloudinary.com/demo/image/upload/v1234567/parade2.jpg',
+          ],
+        },
+        records: [{ cadetId: 'cadet1', cadetName: 'Cadet One', cadetYear: 1, cadetType: 'SD', status: 'Present' }],
+        settings: { sirEmail: 'sir@example.com', thresholdPct: 75 },
+      });
+      expect(globalThis.__mail.length).toBe(1);
+      const paradeHtml = globalThis.__mail[0].html;
+      expect(paradeHtml).not.toContain('/upload/c_');
+      expect(paradeHtml).not.toContain('f_auto');
+      expect(paradeHtml).toContain('https://res.cloudinary.com/demo/image/upload/v1234567/parade1.jpg');
+      expect(paradeHtml).toContain('width="130"');
+      expect(paradeHtml).toContain('max-width:100%');
+      expect(paradeHtml).toContain('height:auto');
+
       // Reset setting back to true
       await call(settingsR.PUT, {
         method: 'PUT',

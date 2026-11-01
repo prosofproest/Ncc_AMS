@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRealtimeData } from '@/lib/useRealtimeData';
-import { api, useUI, Skeleton, Switch, Spinner, Field } from '@/app/components/ui';
+import { api, download, useUI, Skeleton, Switch, Spinner, Field } from '@/app/components/ui';
 import Icon from '@/app/components/Icon';
 import { useUser, hasPerm } from '@/app/components/user';
 
@@ -9,7 +9,7 @@ export default function SettingsPanel() {
   const me = useUser(); const { toast } = useUI();
   const canEdit = hasPerm(me, 'canManageSettings');
   const { data, loading, refresh } = useRealtimeData('/api/settings', 0);
-  const [f, setF] = useState(null); const [saving, setSaving] = useState(false); const [testing, setTesting] = useState(false); const [newReason, setNewReason] = useState('');
+  const [f, setF] = useState(null); const [saving, setSaving] = useState(false); const [testing, setTesting] = useState(false); const [downloading, setDownloading] = useState(false); const [newReason, setNewReason] = useState('');
   useEffect(() => { if (data) setF({ ...data.settings }); }, [data]);
   if (loading && !data) return <Skeleton n={3} h={140} />;
   if (!f) return null;
@@ -17,7 +17,7 @@ export default function SettingsPanel() {
 
   async function save() {
     setSaving(true);
-    const r = await api('/api/settings', { method: 'PUT', body: { sirEmail: f.sirEmail, backupEmail: f.backupEmail, thresholdPct: f.thresholdPct, absentReasons: f.absentReasons, absenceMailEnabled: f.absenceMailEnabled, changeMailEnabled: f.changeMailEnabled, monthlyMailEnabled: f.monthlyMailEnabled, requirePhotos: f.requirePhotos !== false } });
+    const r = await api('/api/settings', { method: 'PUT', body: { sirEmail: f.sirEmail, backupEmail: f.backupEmail, thresholdPct: f.thresholdPct, absentReasons: f.absentReasons, absenceMailEnabled: f.absenceMailEnabled, changeMailEnabled: f.changeMailEnabled, monthlyMailEnabled: f.monthlyMailEnabled, weeklyBackupMailEnabled: f.weeklyBackupMailEnabled !== false, requirePhotos: f.requirePhotos !== false } });
     setSaving(false);
     if (!r.ok) return toast(r.error, 'err'); toast('Settings saved.', 'ok'); refresh();
   }
@@ -25,6 +25,12 @@ export default function SettingsPanel() {
     setTesting(true); const r = await api('/api/health', { method: 'POST', body: {} }); setTesting(false);
     if (!r.ok || !r.data?.success) return toast(`Test mail failed: ${r.error || r.data?.error}`, 'err', 8000);
     toast(`Test email sent to ${r.data.to} (${r.data.ms} ms).`, 'ok');
+  }
+  async function downloadBackup() {
+    setDownloading(true);
+    const r = await download('/api/backup');
+    setDownloading(false);
+    if (!r.ok) toast(r.error || 'Backup download failed', 'err');
   }
   const addReason = () => { const v = newReason.trim(); if (!v || f.absentReasons.includes(v)) return; set('absentReasons', [...f.absentReasons, v]); setNewReason(''); };
   const dis = !canEdit;
@@ -46,10 +52,23 @@ export default function SettingsPanel() {
           ['absenceMailEnabled', 'Absence notice to the cadet', 'A mail to each absent cadet (only if an email is in the sheet).'],
           ['changeMailEnabled', 'Change log to Sir + backup', 'Whenever attendance is edited, deleted, or a benefit is given.'],
           ['monthlyMailEnabled', 'Monthly summary to Sir + backup', 'On the 1st of each month, with the monthly report PDF.'],
+          ['weeklyBackupMailEnabled', 'Weekly backup e-mail', 'On Sundays, sends the complete Excel backup to the backup email.'],
           ['notifyAdminOnReturn', 'E-mail the Administrator when the CTO returns a submission', 'Whenever the CTO returns a submission for correction.'],
           ['notifyCtoOnAdminApproval', 'E-mail Sir when a submission reaches him for approval', 'Whenever an approved submission reaches the CTO stage.'],
         ].map(([k, t, d]) => (
-          <div key={k} className="row between"><div><div className="bold">{t}</div><div className="hint">{d}</div></div><Switch on={!!f[k]} onChange={v => set(k, v)} disabled={dis} label={t} /></div>))}
+          <div key={k} className="row between"><div><div className="bold">{t}</div><div className="hint">{d}</div></div><Switch on={f[k] !== undefined ? !!f[k] : true} onChange={v => set(k, v)} disabled={dis} label={t} /></div>))}
+      </div>
+
+      <div className="card col" style={{ gap: 12 }}>
+        <div>
+          <h2 className="h2">Data backup</h2>
+          <p className="muted small mt-s">Download an Excel workbook (.xlsx) containing all unit data: cadets, accounts, sessions, attendance, benefits, settings, and audit logs.</p>
+        </div>
+        <div>
+          <button className="btn btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={downloadBackup} disabled={downloading}>
+            {downloading ? <Spinner /> : <><Icon name="download" size={14} /> Download backup (Excel)</>}
+          </button>
+        </div>
       </div>
 
       <div className="card col" style={{ gap: 12 }}>

@@ -66,7 +66,7 @@ export async function middleware(request) {
   try {
     const { payload } = await jwtVerify(token, key);
     if (pathname.startsWith('/dashboard/')) {
-      const SHARED = ['/dashboard/leaderboard', '/dashboard/calendar'];   // open to every signed-in role
+      const SHARED = ['/dashboard/leaderboard', '/dashboard/calendar', '/dashboard/help'];   // open to every signed-in role
       if (!SHARED.some(p => pathname.startsWith(p))) {
         let allowedPrefixes = [];
         if (payload.role === 'cadet') {

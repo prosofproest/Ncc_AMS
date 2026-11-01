@@ -3,14 +3,17 @@ export const maxDuration = 60;
 import { NextResponse } from 'next/server';
 import { cronAuthorized } from '@/lib/cron';
 import { db, Collections, snapToArr } from '@/lib/firebase';
-import { getSettings } from '@/lib/settings';
+import { getSettings, cleanEmail } from '@/lib/settings';
 import { getAllUsers } from '@/lib/users';
 import { cycleSessions } from '@/lib/attendance';
 import { rebuildCycle } from '@/lib/sheets';
 import { importFromSheet } from '@/lib/import';
-import { logEvent, pruneEvents } from '@/lib/events';
+import { logEvent, pruneEvents, timed } from '@/lib/events';
 import { summariesDue, runWeekly, runMonthly } from '@/lib/summary';
-import { todayIST } from '@/lib/time';
+import { todayIST, isValidDate } from '@/lib/time';
+import { runInBackground } from '@/lib/bg';
+import { buildBackupBuffer } from '@/lib/backup';
+import { sendBackupEmail } from '@/lib/email';
 
 // Nightly (11 PM IST): import roster edits from the sheet, then rebuild every report tab from the
 // database so the sheet can never drift. Also cleans old logs / expired OTP challenges.
@@ -28,10 +31,38 @@ export async function GET(request) {
     ]);
     out.rebuild = await rebuildCycle({ users, sessions, records: snapToArr(recSnap), benefits: snapToArr(benSnap), thresholdPct: settings.thresholdPct });
     out.pruned = await pruneEvents(14);
-    // The one scheduled job also sends the Monday weekly digest and the monthly summary on the 1st
-    const today = todayIST(), due = summariesDue(today); out.summaries = [];
+    // The one scheduled job also sends the Monday weekly digest, the monthly summary on the 1st,
+    // and the weekly data backup to settings.backupEmail on Sundays.
+    const url = new URL(request.url);
+    const injectedDate = url.searchParams.get('date');
+    const today = (injectedDate && isValidDate(injectedDate)) ? injectedDate : todayIST();
+    const due = summariesDue(today); out.summaries = [];
     if (due.weekly) { const r = await runWeekly(today).catch(e => ({ success: false, error: e.message })); out.summaries.push({ weekly: r.skipped || r.error || 'sent' }); await logEvent({ type: 'cron:weekly', ok: r.success !== false, message: r.skipped || r.error || 'weekly digest sent' }); }
-    if (due.monthly && settings.monthlyMailEnabled) { const r = await runMonthly(today).catch(e => ({ success: false, error: e.message })); out.summaries.push({ monthly: r.skipped || r.error || 'sent' }); await logEvent({ type: 'cron:monthly', ok: r.success !== false, message: r.skipped || r.error || 'monthly summary sent' }); }
+    const isSunday = new Date(today + 'T00:00:00Z').getUTCDay() === 0;
+    if (isSunday && settings.weeklyBackupMailEnabled !== false) {
+      const backupTo = cleanEmail(settings.backupEmail);
+      if (!backupTo) {
+        await logEvent({ type: 'cron:backup', ok: false, message: 'Warning: backupEmail is empty. Skipping weekly backup.' });
+        out.summaries.push({ backup: 'skipped: no backup email' });
+      } else {
+        const { buffer, rowCounts } = await buildBackupBuffer({ date: today });
+        const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
+        if (buffer.byteLength > MAX_BYTES) {
+          await logEvent({ type: 'cron:backup', ok: false, message: 'Backup file size exceeds 20 MB limit. Not attached.' });
+          out.summaries.push({ backup: 'failed: file > 20 MB' });
+        } else {
+          runInBackground(() => timed('mail:backup', async () => {
+            return sendBackupEmail({
+              to: backupTo,
+              date: today,
+              buffer,
+              rowCounts,
+            });
+          }, () => `weekly backup sent to ${backupTo}`));
+          out.summaries.push({ backup: 'sent' });
+        }
+      }
+    }
     const old = await db.collection(Collections.OTP).where('expiresAt', '<', Date.now()).limit(400).get();
     if (!old.empty) { const b = db.batch(); old.docs.forEach(d => b.delete(d.ref)); await b.commit(); }
 

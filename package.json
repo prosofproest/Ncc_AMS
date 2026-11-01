@@ -15,7 +15,8 @@
     "check-layout": "node --env-file=.env.local scripts/check-layout.mjs",
     "check-nav": "node --env-file=.env.local scripts/check-nav.mjs",
     "check-resubmit": "node --env-file=.env.local scripts/check-resubmit.mjs",
-    "test-cloudinary": "node --env-file=.env.local scripts/test-cloudinary.mjs"
+    "test-cloudinary": "node --env-file=.env.local scripts/test-cloudinary.mjs",
+    "reset-password": "node --env-file=.env.local scripts/reset-password.mjs"
   },
   "dependencies": {
     "@googleapis/sheets": "^18.1.1",

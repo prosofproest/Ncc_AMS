@@ -16,6 +16,7 @@ export function navFor(user, needsMe = 0) {
           { id: 'cadet', label: 'My attendance', icon: 'user', href: '/dashboard/cadet', primary: true },
           { id: 'leaderboard', label: 'Leaderboard', icon: 'trophy', href: '/dashboard/leaderboard', primary: true },
           { id: 'calendar', label: 'Calendar', icon: 'calendar', href: '/dashboard/calendar', primary: true },
+          { id: 'help', label: 'Help', icon: 'help-circle', href: '/dashboard/help', primary: true },
         ],
       },
     ];
@@ -29,6 +30,7 @@ export function navFor(user, needsMe = 0) {
         items: [
           { id: 'mark', label: 'Mark attendance', icon: 'check-circle', href: `${base}/mark`, primary: true },
           { id: 'history', label: 'History & status', icon: 'history', href: `${base}/history`, primary: true },
+          { id: 'help', label: 'Help', icon: 'help-circle', href: '/dashboard/help', primary: true },
         ],
       },
     ];
@@ -41,6 +43,7 @@ export function navFor(user, needsMe = 0) {
     can('canMarkAttendance') && { id: 'mark', label: 'Mark attendance', icon: 'check-circle', href: `${base}/mark`, primary: true },
     can('canViewAllAttendance') && { id: 'records', label: 'Records', icon: 'list', href: `${base}/records`, primary: true },
     role === 'admin' && { id: 'calendar', label: 'Calendar', icon: 'calendar', href: '/dashboard/calendar' },
+    { id: 'help', label: 'Help', icon: 'help-circle', href: '/dashboard/help', primary: true },
   ].filter(Boolean);
 
   const peopleItems = [
@@ -73,7 +76,7 @@ export function navFor(user, needsMe = 0) {
 export function isItemActive(pathname, href) {
   if (!pathname || !href) return false;
   if (pathname === href) return true;
-  if (href === '/dashboard/cadet' || href === '/dashboard/leaderboard' || href === '/dashboard/calendar') {
+  if (href === '/dashboard/cadet' || href === '/dashboard/leaderboard' || href === '/dashboard/calendar' || href === '/dashboard/help') {
     return pathname === href;
   }
   return pathname.startsWith(href);

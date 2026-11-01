@@ -295,6 +295,7 @@ function Shell({ children }) {
       cadet: 'My attendance',
       leaderboard: 'Leaderboard',
       calendar: 'Calendar',
+      help: 'Help',
     };
     return names[last] || (last.charAt(0).toUpperCase() + last.slice(1));
   };
