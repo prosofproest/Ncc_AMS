@@ -9,7 +9,7 @@ export default function SettingsPanel() {
   const me = useUser(); const { toast } = useUI();
   const canEdit = hasPerm(me, 'canManageSettings');
   const { data, loading, refresh } = useRealtimeData('/api/settings', 0);
-  const [f, setF] = useState(null); const [saving, setSaving] = useState(false); const [testing, setTesting] = useState(false); const [downloading, setDownloading] = useState(false); const [newReason, setNewReason] = useState('');
+  const [f, setF] = useState(null); const [saving, setSaving] = useState(false); const [testing, setTesting] = useState(false); const [downloading, setDownloading] = useState(false); const [downloadingPdf, setDownloadingPdf] = useState(false); const [newReason, setNewReason] = useState('');
   useEffect(() => { if (data) setF({ ...data.settings }); }, [data]);
   if (loading && !data) return <Skeleton n={3} h={140} />;
   if (!f) return null;
@@ -31,6 +31,12 @@ export default function SettingsPanel() {
     const r = await download('/api/backup');
     setDownloading(false);
     if (!r.ok) toast(r.error || 'Backup download failed', 'err');
+  }
+  async function downloadBackupPdf() {
+    setDownloadingPdf(true);
+    const r = await download('/api/backup?format=pdf');
+    setDownloadingPdf(false);
+    if (!r.ok) toast(r.error || 'Backup PDF download failed', 'err');
   }
   const addReason = () => { const v = newReason.trim(); if (!v || f.absentReasons.includes(v)) return; set('absentReasons', [...f.absentReasons, v]); setNewReason(''); };
   const dis = !canEdit;
@@ -64,9 +70,12 @@ export default function SettingsPanel() {
           <h2 className="h2">Data backup</h2>
           <p className="muted small mt-s">Download an Excel workbook (.xlsx) containing all unit data: cadets, accounts, sessions, attendance, benefits, settings, and audit logs.</p>
         </div>
-        <div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button className="btn btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={downloadBackup} disabled={downloading}>
             {downloading ? <Spinner /> : <><Icon name="download" size={14} /> Download backup (Excel)</>}
+          </button>
+          <button className="btn btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={downloadBackupPdf} disabled={downloadingPdf}>
+            {downloadingPdf ? <Spinner /> : <><Icon name="download" size={14} /> Download year-wise PDF</>}
           </button>
         </div>
       </div>

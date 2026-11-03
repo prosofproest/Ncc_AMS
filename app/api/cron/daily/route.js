@@ -12,7 +12,7 @@ import { logEvent, pruneEvents, timed } from '@/lib/events';
 import { summariesDue, runWeekly, runMonthly } from '@/lib/summary';
 import { todayIST, isValidDate } from '@/lib/time';
 import { runInBackground } from '@/lib/bg';
-import { buildBackupBuffer } from '@/lib/backup';
+import { buildBackupBuffer, buildBackupPdfBuffer } from '@/lib/backup';
 import { sendBackupEmail } from '@/lib/email';
 
 // Nightly (11 PM IST): import roster edits from the sheet, then rebuild every report tab from the
@@ -45,21 +45,29 @@ export async function GET(request) {
         await logEvent({ type: 'cron:backup', ok: false, message: 'Warning: backupEmail is empty. Skipping weekly backup.' });
         out.summaries.push({ backup: 'skipped: no backup email' });
       } else {
-        const { buffer, rowCounts } = await buildBackupBuffer({ date: today });
+        const { buffer: xlsxBuffer, rowCounts, yearStats } = await buildBackupBuffer({ date: today });
+        const { buffer: pdfBuffer } = await buildBackupPdfBuffer({ date: today });
         const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
-        if (buffer.byteLength > MAX_BYTES) {
+
+        if (pdfBuffer.byteLength > MAX_BYTES) {
           await logEvent({ type: 'cron:backup', ok: false, message: 'Backup file size exceeds 20 MB limit. Not attached.' });
           out.summaries.push({ backup: 'failed: file > 20 MB' });
         } else {
+          const totalBytes = xlsxBuffer.byteLength + pdfBuffer.byteLength;
+          const omitXlsx = totalBytes > MAX_BYTES;
+
           runInBackground(() => timed('mail:backup', async () => {
             return sendBackupEmail({
               to: backupTo,
               date: today,
-              buffer,
+              xlsxBuffer: omitXlsx ? null : xlsxBuffer,
+              pdfBuffer,
               rowCounts,
+              yearStats,
+              omittedXlsx: omitXlsx,
             });
           }, () => `weekly backup sent to ${backupTo}`));
-          out.summaries.push({ backup: 'sent' });
+          out.summaries.push({ backup: omitXlsx ? 'sent (pdf only, xlsx > 20 MB)' : 'sent' });
         }
       }
     }

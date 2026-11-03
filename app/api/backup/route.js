@@ -4,10 +4,10 @@ export const maxDuration = 60;
 import { NextResponse } from 'next/server';
 import { authenticate } from '@/lib/session';
 import { db, Collections } from '@/lib/firebase';
-import { buildBackupBuffer } from '@/lib/backup';
+import { buildBackupBuffer, buildBackupPdfBuffer } from '@/lib/backup';
 import { todayIST } from '@/lib/time';
 
-// In-memory rate limit: 1 download per minute per admin
+// In-memory rate limit: 1 download per minute per admin (shared by both formats)
 const lastDownloadByAdmin = new Map();
 
 export function _resetBackupRateLimiter() {
@@ -38,16 +38,31 @@ export async function GET(request) {
   }
   lastDownloadByAdmin.set(adminId, now);
 
+  const url = new URL(request.url);
+  const format = (url.searchParams.get('format') || 'xlsx').toLowerCase();
   const date = todayIST();
-  const { buffer, filename } = await buildBackupBuffer({ date });
 
   await db.collection(Collections.AUDIT_LOG).add({
     type: 'backup-download',
+    format: format === 'pdf' ? 'pdf' : 'xlsx',
     by: payload.id,
     byName: payload.name || payload.username || 'Administrator',
     at: new Date().toISOString(),
   }).catch(err => console.error('[BACKUP:AUDIT]', err.message));
 
+  if (format === 'pdf') {
+    const { buffer, filename } = await buildBackupPdfBuffer({ date });
+    return new NextResponse(buffer, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      },
+    });
+  }
+
+  const { buffer, filename } = await buildBackupBuffer({ date });
   return new NextResponse(buffer, {
     status: 200,
     headers: {
