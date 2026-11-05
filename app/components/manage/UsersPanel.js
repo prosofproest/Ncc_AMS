@@ -4,6 +4,7 @@ import { useRealtimeData } from '@/lib/useRealtimeData';
 import { api, useUI, Modal, Skeleton, Empty, Spinner, Switch, Field, PctBadge, initials } from '@/app/components/ui';
 import Icon from '@/app/components/Icon';
 import { useUser, hasPerm } from '@/app/components/user';
+import { normalizeRegNo } from '@/lib/keys.mjs';
 
 const BUILTIN = { marker: 'Attendance marker', cadet: 'Cadet', cto: 'CTO (Sir)', admin: 'Administrator' };
 const blank = { role: 'marker', name: '', reg_no: '', year: 1, type: 'SD', username: '', password: '', email: '', phone: '', otp_required: true, must_change_password: true, is_active: true };
@@ -22,7 +23,27 @@ export default function UsersPanel({ readOnly = false }) {
   const [q, setQ] = useState(''); const [fRole, setFRole] = useState('all'); const [fYear, setFYear] = useState('all'); const [fStatus, setFStatus] = useState('active');
   const [form, setForm] = useState(null); const [saving, setSaving] = useState(false); const [showPw, setShowPw] = useState(false);
 
+  const dupGroups = useMemo(() => {
+    const cadets = (data?.cadets || []).filter(u => u.role === 'cadet' && u.regNo);
+    const byReg = new Map();
+    cadets.forEach(u => {
+      const nr = normalizeRegNo(u.regNo);
+      if (nr) {
+        if (!byReg.has(nr)) byReg.set(nr, []);
+        byReg.get(nr).push(u);
+      }
+    });
+    const groups = [];
+    byReg.forEach((list, nr) => {
+      if (list.length > 1) groups.push({ regNo: nr, cadets: list });
+    });
+    return groups;
+  }, [data]);
+
+  const dupCadetCount = useMemo(() => dupGroups.reduce((acc, g) => acc + g.cadets.length, 0), [dupGroups]);
+
   const list = useMemo(() => (data?.cadets || []).filter(u => {
+    if (fStatus === 'duplicates') return false;
     if (fRole !== 'all' && u.role !== fRole) return false;
     if (fYear !== 'all' && String(u.year) !== fYear) return false;
     if (fStatus === 'active' && !(u.isActive && !u.discharged)) return false;
@@ -99,10 +120,65 @@ export default function UsersPanel({ readOnly = false }) {
     if (!await confirm({ title: `Discharge ${form.name}?`, message: 'They are removed from the active roster and the sheet, and signed out. Their attendance history is kept. You can roll this back.', confirmText: 'Discharge', danger: true })) return;
     const r = await api(`/api/cadets/${form.id}`, { method: 'DELETE', body: { action: 'discharge' } }); if (!r.ok) return toast(r.error, 'err'); toast('Discharged.', 'ok'); setForm(null); refresh();
   }
+  async function deleteAccount() {
+    const isCadetAccount = form.role === 'cadet';
+    if (!await confirm({
+      title: isCadetAccount ? `Delete cadet ${form.name}?` : `Delete account for ${form.name}?`,
+      message: isCadetAccount
+        ? `Are you sure you want to permanently delete cadet ${form.name}? This is only allowed if they have no attendance history.`
+        : 'This permanently removes the account and signs the person out. This action cannot be undone.',
+      confirmText: isCadetAccount ? 'Delete cadet' : 'Delete account',
+      danger: true
+    })) return;
+    const r = await api(`/api/cadets/${form.id}`, { method: 'DELETE', body: { action: 'delete' } });
+    if (!r.ok) return toast(r.error, 'err');
+    toast(isCadetAccount ? 'Cadet deleted.' : 'Account deleted.', 'ok');
+    setForm(null);
+    refresh();
+  }
+
+  async function deleteCadetDirect(u) {
+    if (!await confirm({
+      title: `Delete cadet ${u.name}?`,
+      message: `Are you sure you want to permanently delete cadet ${u.name}? This is only allowed if they have no attendance history.`,
+      confirmText: 'Delete cadet',
+      danger: true,
+    })) return;
+    const r = await api(`/api/cadets/${u.id}`, { method: 'DELETE', body: { action: 'delete' } });
+    if (!r.ok) return toast(r.error, 'err');
+    toast('Cadet deleted.', 'ok');
+    refresh();
+  }
+
+  async function dischargeCadetDirect(u) {
+    if (!await confirm({
+      title: `Discharge ${u.name}?`,
+      message: 'They are removed from the active roster and the sheet, and signed out. Their attendance history is kept.',
+      confirmText: 'Discharge',
+      danger: true,
+    })) return;
+    const r = await api(`/api/cadets/${u.id}`, { method: 'DELETE', body: { action: 'discharge' } });
+    if (!r.ok) return toast(r.error, 'err');
+    toast('Discharged.', 'ok');
+    refresh();
+  }
+
   async function rollback() { const r = await api(`/api/cadets/${form.id}`, { method: 'PUT', body: { rollback: true } }); if (!r.ok) return toast(r.error, 'err'); toast('Restored to the active roster.', 'ok'); setForm(null); refresh(); }
 
   return (
     <div className="stack">
+      {dupGroups.length > 0 && (
+        <div className="banner bad" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Icon name="alert-triangle" size={16} />
+            Duplicate Regimental Numbers detected among {dupCadetCount} cadets ({dupGroups.length} group{dupGroups.length > 1 ? 's' : ''}).
+          </span>
+          {fStatus !== 'duplicates' && (
+            <button className="btn btn-sm btn-danger" onClick={() => setFStatus('duplicates')}>View duplicates</button>
+          )}
+        </div>
+      )}
+
       <div className="row wrap">
         <input className="input grow" style={{ minWidth: 180 }} placeholder="Search name, reg. no., username, email…" value={q} onChange={e => setQ(e.target.value)} />
         {canManage && <button className="btn btn-primary" onClick={openAdd} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="plus" size={16} /> Add account</button>}
@@ -110,11 +186,62 @@ export default function UsersPanel({ readOnly = false }) {
       <div className="row wrap gap-s">
         <select className="input" style={{ width: 'auto' }} value={fRole} onChange={e => setFRole(e.target.value)}><option value="all">All roles</option>{Object.entries(roleOptions).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
         <select className="input" style={{ width: 'auto' }} value={fYear} onChange={e => setFYear(e.target.value)}><option value="all">All years</option><option value="1">Year 1</option><option value="2">Year 2</option><option value="3">Year 3</option></select>
-        <div className="seg">{[['active', 'Active'], ['inactive', 'Inactive'], ['discharged', 'Discharged'], ['all', 'All']].map(([k, l]) => <button key={k} className={fStatus === k ? 'on' : ''} onClick={() => setFStatus(k)}>{l}</button>)}</div>
-        <span className="muted small right">{list.length} shown</span>
+        <div className="seg">
+          {[
+            ['active', 'Active'],
+            ['inactive', 'Inactive'],
+            ['discharged', 'Discharged'],
+            ['all', 'All'],
+            ...(dupGroups.length ? [['duplicates', `Duplicates (${dupCadetCount})`]] : [])
+          ].map(([k, l]) => <button key={k} className={fStatus === k ? 'on' : ''} onClick={() => setFStatus(k)}>{l}</button>)}
+        </div>
+        <span className="muted small right">{fStatus === 'duplicates' ? `${dupCadetCount} duplicates` : `${list.length} shown`}</span>
       </div>
 
-      {loading && !data ? <Skeleton n={6} h={66} /> : !list.length ? <div className="card"><Empty icon="users">No one matches.</Empty></div> : (
+      {fStatus === 'duplicates' ? (
+        <div className="col gap mt">
+          {dupGroups.map(g => (
+            <div key={g.regNo} className="card col" style={{ gap: 12 }}>
+              <div className="row between">
+                <h3 className="h2" style={{ margin: 0 }}>Reg No: <span className="mono">{g.regNo}</span></h3>
+                <span className="badge b-amber">{g.cadets.length} cadets</span>
+              </div>
+              <div className="grid g2 gap-s">
+                {g.cadets.map(u => (
+                  <div key={u.id} className="card tight col" style={{ gap: 8, background: 'var(--bg-subtle)' }}>
+                    <div className="row between">
+                      <div>
+                        <div className="bold">{u.name}</div>
+                        <div className="small muted">Year {u.year || '—'} · {u.type || 'SD'} · {u.regNo}</div>
+                      </div>
+                      <span className={`badge ${u.isActive && !u.discharged ? 'b-green' : u.discharged ? 'b-red' : 'b-gray'}`}>
+                        {u.isActive && !u.discharged ? 'Active' : u.discharged ? 'Discharged' : 'Inactive'}
+                      </span>
+                    </div>
+                    <div className="row wrap gap-s small muted">
+                      <span>Parades: {u.pct != null ? `${u.pct}%` : `${u.stats?.total || 0} total`}</span>
+                      <span>·</span>
+                      <span>Created: {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-IN') : '—'}</span>
+                      <span>·</span>
+                      <span className="mono">{u.id}</span>
+                    </div>
+                    {canManage && (
+                      <div className="row gap-s mt-s">
+                        {me?.role === 'admin' && (
+                          <button className="btn btn-sm btn-danger" onClick={() => deleteCadetDirect(u)}>Delete</button>
+                        )}
+                        {!u.discharged && (
+                          <button className="btn btn-sm" onClick={() => dischargeCadetDirect(u)}>Discharge</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : loading && !data ? <Skeleton n={6} h={66} /> : !list.length ? <div className="card"><Empty icon="users">No one matches.</Empty></div> : (
         <div className="grid g2 tbl-dense">{list.map(u => (
           <div key={u.id} className={`item tbl-dense${!u.isActive ? ' locked' : ''}`} style={{ margin: 0 }}>
             <span className="avatar">{initials(u.name)}</span>
@@ -209,9 +336,17 @@ export default function UsersPanel({ readOnly = false }) {
                 </div>
               )}
             </div>
-            {form.id && isCadet && !form.discharged && form.id !== me.id && (
-              <button className="btn btn-danger btn-sm" style={{ alignSelf: 'flex-start' }} onClick={discharge}>Discharge from the unit…</button>
-            )}
+            <div className="row gap-s" style={{ alignSelf: 'flex-start' }}>
+              {form.id && isCadet && !form.discharged && form.id !== me.id && (
+                <button type="button" className="btn btn-danger btn-sm" onClick={discharge}>Discharge from the unit…</button>
+              )}
+              {form.id && isCadet && me?.role === 'admin' && form.id !== me.id && (
+                <button type="button" className="btn btn-danger btn-sm" onClick={deleteAccount}>Delete cadet…</button>
+              )}
+              {form.id && !isCadet && me?.role === 'admin' && (
+                <button type="button" className="btn btn-danger btn-sm" onClick={deleteAccount}>Delete account…</button>
+              )}
+            </div>
           </div>)}
       </Modal>
     </div>

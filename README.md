@@ -106,5 +106,6 @@ The script:
 * A cadet with no valid e-mail simply receives no absence mail.
 * Cadets removed from the sheet are **deactivated, never deleted** (history stays).
 * Marker session lifetime: defaults to 30 minutes (configurable via `MARKER_SESSION_MINUTES` environment variable); all other roles have an 8-hour session.
+* `ALLOW_ADMIN_WITHOUT_OTP`: Emergency use only. When set to `'true'`, allows an administrator account with OTP enabled to sign in even if no email address is configured on the account. Defaults to off.
 * `npm test` runs automated checks (API simulation with fake Firebase / Sheets / SMTP, plus the real screens in a simulated browser).
 

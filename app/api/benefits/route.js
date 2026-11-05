@@ -81,7 +81,12 @@ export async function DELETE(request) {
   const bn = snap.data();
   const settings = await getSettings();
   const ops = [b => b.delete(ref)];
-  if (bn.cycle === settings.currentCycle) ops.push(b => b.update(db.collection(Collections.USERS).doc(bn.cadetId), { benefit: FieldValue.increment(-bn.credits) }));
+  if (bn.cycle === settings.currentCycle) {
+    const uSnap = await db.collection(Collections.USERS).doc(bn.cadetId).get();
+    if (uSnap.exists) {
+      ops.push(b => b.update(db.collection(Collections.USERS).doc(bn.cadetId), { benefit: FieldValue.increment(-bn.credits) }));
+    }
+  }
   const changes = [{ name: bn.cadetName, regNo: bn.cadetRegNo, from: `+${bn.credits} credit(s)`, to: 'Removed', reason: bn.reason }];
   ops.push(b => b.set(db.collection(Collections.AUDIT_LOG).doc(), { type: 'benefit-remove', by: payload.id, byName: payload.name, at: new Date().toISOString(), date: bn.date, note: bn.reason, changes }));
   await commitInChunks(ops, 400);

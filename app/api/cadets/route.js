@@ -13,6 +13,7 @@ import { runInBackground } from '@/lib/bg';
 import { maybeAutoImport } from '@/lib/import';
 import { timed } from '@/lib/events';
 import { refreshSheetSummaries } from '@/lib/sheetjobs';
+import { normalizeRegNo } from '@/lib/keys.mjs';
 
 const order = (a, b) => personOrder({ ...a, cadetYear: a.year, cadetType: a.type, cadetRegNo: a.regNo, cadetName: a.name }, { ...b, cadetYear: b.year, cadetType: b.type, cadetRegNo: b.regNo, cadetName: b.name });
 
@@ -67,7 +68,7 @@ export async function POST(request) {
 
   const name = cleanText(body.name, 80);
   const role = String(body.role || 'cadet');
-  const regNo = String(body.reg_no || '').trim().toUpperCase();
+  const regNo = normalizeRegNo(body.reg_no);
   const email = cleanEmail(body.email);
   const isCadet = role === 'cadet';
   const staff = !isCadet;
@@ -77,12 +78,15 @@ export async function POST(request) {
   if (password.length < 6 || password.length > 100) return NextResponse.json({ error: 'Password must be at least 6 characters.' }, { status: 400 });
   if (body.email && !email) return NextResponse.json({ error: 'That email address is not valid.' }, { status: 400 });
 
+  if ((role === 'admin' || role === 'cto') && !email) {
+    return NextResponse.json({ error: 'An Administrator or CTO account requires an email address.' }, { status: 400 });
+  }
   if (staff && !email) {
     return NextResponse.json({ error: 'Email address is required.' }, { status: 400 });
   }
 
   let username = String(body.username || '').trim().toLowerCase();
-  if (role === 'marker' || role === 'cto' || (staff && !username)) {
+  if (!username && (role === 'marker' || role === 'cto' || staff)) {
     username = email ? email.toLowerCase() : '';
   }
 
@@ -102,10 +106,16 @@ export async function POST(request) {
     }
   }
 
-  if (username && users.some(u => u.username === username)) {
+  if (staff && username) {
+    if (users.some(u => u.role !== 'cadet' && String(u.username || '').toLowerCase() === username.toLowerCase())) {
+      return NextResponse.json({ error: 'That username is already in use by another staff account.' }, { status: 400 });
+    }
+  }
+
+  if (username && users.some(u => String(u.username || '').toLowerCase() === username.toLowerCase())) {
     return NextResponse.json({ error: 'Username already exists.' }, { status: 400 });
   }
-  if (regNo && users.some(u => u.regNo === regNo)) {
+  if (regNo && users.some(u => u.role === 'cadet' && normalizeRegNo(u.regNo) === regNo)) {
     return NextResponse.json({ error: 'Regimental Number already exists.' }, { status: 400 });
   }
 

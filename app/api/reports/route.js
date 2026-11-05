@@ -18,6 +18,7 @@ export async function GET(request) {
   const own = type === 'cadet' && sp.get('cadetId') === payload.id;           // everyone may download their own report
   const dayForMarker = type === 'day' && can(payload, 'canMarkAttendance');
   if (!all && !own && !dayForMarker) return NextResponse.json({ error: 'You do not have permission for this report.' }, { status: 403 });
+  if (type === 'contacts' && format === 'csv') return NextResponse.json({ error: 'CSV is not available for contact details check.' }, { status: 400 });
 
   try {
     const params = Object.fromEntries(sp.entries());

@@ -64,8 +64,7 @@ describe('a large unit (300 cadets, 3 years)', () => {
   });
 
   it('rebuild + full-unit report handle 300 rows', async () => {
-    const admin = await bcrypt.hash('x', 4);
-    await db.collection('users').doc('adm').set({ name: 'Adm', role: 'admin', username: 'adm', passwordHash: await bcrypt.hash('Admin@123', 4), isActive: true, otpRequired: false });
+    await db.collection('users').doc('adm0').set({ name: 'Adm', role: 'admin', username: 'adm', passwordHash: await bcrypt.hash('Admin@123', 4), isActive: true, otpRequired: false });
     const ac = (await call(loginR.POST, { method: 'POST', body: { identifier: 'adm', password: 'Admin@123' } })).cookie;
     const rb = await call(syncR.POST, { method: 'POST', cookie: ac, body: { action: 'rebuild' } });
     expect(rb.json.success).toBe(true);

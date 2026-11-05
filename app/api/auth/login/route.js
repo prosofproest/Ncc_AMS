@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { db, Collections } from '@/lib/firebase';
 import { verifyPassword, generateOtp, hashOtp, randomId, maskEmail, hashTabId } from '@/lib/auth';
 import { issueSession } from '@/lib/session';
-import { findUserByIdentifier } from '@/lib/users';
+import { findUserByIdentifier, findUsersByIdentifier } from '@/lib/users';
 import { cleanEmail } from '@/lib/settings';
 import { sendOtpEmail } from '@/lib/email';
 import { logEvent } from '@/lib/events';
@@ -22,7 +22,25 @@ export async function POST(request) {
     if (!identifier || !password) return NextResponse.json({ error: 'Enter your username / regimental number and password.' }, { status: 400 });
     if (identifier.length > 100 || password.length > 200) return NextResponse.json({ error: 'Invalid input.' }, { status: 400 });
 
-    const user = await findUserByIdentifier(identifier);
+    const matchingUsers = await findUsersByIdentifier(identifier);
+    const activeUsers = matchingUsers.filter(u => u.isActive !== false && !u.discharged);
+
+    if (activeUsers.length > 1) {
+      let identifierType = 'username';
+      if (identifier.includes('@')) identifierType = 'email';
+      else if (activeUsers.some(u => u.regNo && String(u.regNo).trim().toUpperCase() === identifier.toUpperCase())) identifierType = 'regNo';
+
+      await logEvent({
+        type: 'auth:ambiguous-identifier',
+        ok: false,
+        message: `Multiple active accounts matched ${identifierType}`,
+        meta: { identifierType }
+      }).catch(() => {});
+
+      return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
+    }
+
+    const user = activeUsers[0] || matchingUsers[0];
     if (!user) return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
 
     if (user.lockedUntil && Date.parse(user.lockedUntil) > Date.now()) {
@@ -47,9 +65,12 @@ export async function POST(request) {
     const email = cleanEmail(user.email);
     if (user.otpRequired === true) {
       if (!email) {
-        if (user.role === 'admin') {            // never lock the administrator out
-          await ref.update({ failedLogins: 0, lockedUntil: null, lastLoginAt: new Date().toISOString() });
-          return await issueSession(user, { tabId, otpSkipped: 'The admin account has no email set, so the OTP step was skipped.' });
+        if (user.role === 'admin') {
+          if (process.env.ALLOW_ADMIN_WITHOUT_OTP === 'true') {
+            await ref.update({ failedLogins: 0, lockedUntil: null, lastLoginAt: new Date().toISOString() });
+            return await issueSession(user, { tabId, otpSkipped: 'The admin account has no email set, so the OTP step was skipped.' });
+          }
+          return NextResponse.json({ error: 'OTP is on for this account but no e-mail is set. Ask another administrator, or use the recovery script.' }, { status: 403 });
         }
         if (user.role === 'cadet') {
           await ref.update({ failedLogins: 0, lockedUntil: null, lastLoginAt: new Date().toISOString() });

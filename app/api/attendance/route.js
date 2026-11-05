@@ -59,15 +59,35 @@ export async function GET(request) {
     const sess = await db.collection(Collections.SESSIONS).doc(sp.get('sessionId')).get();
     if (!sess.exists) return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
     const records = (await sessionRecords(sess.id)).map(r => ({ ...r, status: normStatus(r.status) }));
-    return NextResponse.json({ session: { id: sess.id, ...sess.data() }, records });
+    const sData = sess.data() || {};
+    const ap = sData.approvals || {};
+    const appAt = sData.approvedAt || ap.cto?.at || ap.admin?.at || null;
+    return NextResponse.json({
+      session: {
+        id: sess.id,
+        ...sData,
+        createdAt: sData.createdAt || sData.updatedAt || null,
+        approvedAt: appAt,
+      },
+      records,
+    });
   }
 
   // Sessions list (history, calendar, reports)
   if (sp.get('history') || sp.get('all')) {
     const cyc = sp.get('cycle');
     let sessions;
-    if (cyc === 'all') sessions = snapToArr(await db.collection(Collections.SESSIONS).get()).sort((a, b) => b.date.localeCompare(a.date));
+    if (cyc === 'all') sessions = snapToArr(await db.collection(Collections.SESSIONS).get());
     else sessions = await cycleSessions(cyc ? parseInt(cyc, 10) : settings.currentCycle);
+    sessions = sessions.map(s => {
+      const ap = s.approvals || {};
+      const appAt = s.approvedAt || ap.cto?.at || ap.admin?.at || null;
+      return {
+        ...s,
+        createdAt: s.createdAt || s.updatedAt || null,
+        approvedAt: appAt,
+      };
+    }).sort((a, b) => (b.date || '').localeCompare(a.date || '') || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
     return NextResponse.json({ sessions, cycle: settings.currentCycle, cycleLabel: settings.cycleLabel });
   }
   return NextResponse.json({ sessions: [] });
@@ -216,13 +236,14 @@ export async function PUT(request) {
   const now = new Date().toISOString();
   const sameCycle = (session.cycle || 1) === settings.currentCycle;      // counters were reset by promotion otherwise
   let dPresent = 0;
+  const userMap = sameCycle ? await getUsersByIds(diffs.map(d => d.old.cadetId).filter(Boolean)) : {};
   const ops = [];
   for (const d of diffs) {
     ops.push(b => b.update(db.collection(Collections.ATTENDANCE).doc(d.id), { status: d.status, reason: d.reason, remarks: '', updatedAt: now, editedBy: payload.id, editedByName: payload.name }));
     if (d.status !== d.oldStatus) {
       dPresent += d.status === 'Present' ? 1 : -1;
       const upd = statChange(session.date, d.oldStatus, d.status);
-      if (upd && sameCycle) ops.push(b => b.update(db.collection(Collections.USERS).doc(d.old.cadetId), upd));
+      if (upd && sameCycle && userMap[d.old.cadetId]) ops.push(b => b.update(db.collection(Collections.USERS).doc(d.old.cadetId), upd));
     }
   }
   const newSession = { ...session, present: session.present + dPresent, absent: session.absent - dPresent, updatedAt: now, lastEditedByName: payload.name };
@@ -269,10 +290,11 @@ export async function DELETE(request) {
   const records = await sessionRecords(sessionId);
   const sameCycle = (session.cycle || 1) === settings.currentCycle;
 
+  const userMap = sameCycle ? await getUsersByIds(records.map(r => r.cadetId).filter(Boolean)) : {};
   const ops = [];
   for (const r of records) {
     ops.push(b => b.delete(db.collection(Collections.ATTENDANCE).doc(r.id)));
-    if (sameCycle) ops.push(b => b.update(db.collection(Collections.USERS).doc(r.cadetId), statIncrements(session.date, normStatus(r.status), -1)));
+    if (sameCycle && userMap[r.cadetId]) ops.push(b => b.update(db.collection(Collections.USERS).doc(r.cadetId), statIncrements(session.date, normStatus(r.status), -1)));
   }
   ops.push(b => b.delete(db.collection(Collections.SESSIONS).doc(sessionId)));
   const changes = [{ name: `${records.length} cadet records`, regNo: '', from: `${session.present} present / ${session.absent} absent`, to: 'Deleted', reason: '' }];

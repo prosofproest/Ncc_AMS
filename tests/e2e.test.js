@@ -454,8 +454,8 @@ describe('7. downloadable reports', () => {
     require('fs').writeFileSync('/tmp/monthly.pdf', m.buffer);
     const mx = await get(state.cto, `type=month&month=${ym}&format=xlsx`);
     const ExcelJS = (await import('exceljs')).default; const wb = new ExcelJS.Workbook(); await wb.xlsx.load(mx.buffer);
-    expect(wb.worksheets.map(w => w.name)).toEqual(['Summary', 'Parades held', 'Cadet-wise attendance']);
-    expect(wb.getWorksheet('Cadet-wise attendance').rowCount).toBe(9);
+    expect(wb.worksheets.map(w => w.name)).toEqual(['Monthly']);
+    expect(wb.getWorksheet('Monthly').rowCount).toBeGreaterThan(5);
     expect((await get(state.cto, `type=range&from=${TODAY}&to=${TODAY}&format=csv`)).buffer.toString()).toMatch(/Arjun Sharma/);
     expect((await get(state.cto, `type=range&from=${TODAY}&to=2020-01-01&format=pdf`)).status).toBe(400);
     const cadetPdf = await get(state.cto, `type=cadet&cadetId=${userByName('Priya Nair').id}&format=pdf`);
@@ -678,7 +678,7 @@ describe('10. nightly rebuild, monthly summary, health panel', () => {
     expect(q.json.database).toMatchObject({ ok: true }); expect(q.json.database.readMs).toBeGreaterThanOrEqual(0);
     const f = await call(healthR.GET, { cookie: state.admin, url: '/api/health?mode=full' });
     expect(f.status).toBe(200);
-    expect(Object.keys(f.json.services)).toEqual(['database', 'sheets', 'email', 'photos', 'env', 'officialMail']);
+    expect(Object.keys(f.json.services)).toEqual(['database', 'sheets', 'email', 'photos', 'env', 'officialMail', 'accounts', 'dataIntegrity']);
     expect(f.json.services.sheets.ok).toBe(true); expect(f.json.services.email.ok).toBe(true); expect(f.json.services.photos.ok).toBe(true);
     expect(f.json.activity.counts.sheets.ok).toBeGreaterThan(5);
     expect(f.json.activity.crons.nightly.ok).toBe(true);

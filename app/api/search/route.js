@@ -6,6 +6,7 @@ import { getAllUsers } from '@/lib/users';
 import { getSettings } from '@/lib/settings';
 import { cycleSessions } from '@/lib/attendance';
 import { readStats } from '@/lib/stats';
+import { normalizeRegNo } from '@/lib/keys.mjs';
 
 export async function GET(request) {
   const { payload, error } = await authenticate(request);
@@ -15,8 +16,14 @@ export async function GET(request) {
   const q = new URL(request.url).searchParams.get('q')?.trim().toLowerCase();
   if (!q || q.length < 2) return NextResponse.json({ cadets: [], sessions: [] });
 
+  const normQ = normalizeRegNo(q);
   const users = await getAllUsers();
-  const cadets = users.filter(u => u.role === 'cadet' && (u.name?.toLowerCase().includes(q) || u.regNo?.toLowerCase().includes(q) || u.username?.toLowerCase().includes(q)))
+  const cadets = users.filter(u => u.role === 'cadet' && (
+    u.name?.toLowerCase().includes(q) ||
+    u.regNo?.toLowerCase().includes(q) ||
+    (normQ && normalizeRegNo(u.regNo).includes(normQ)) ||
+    u.username?.toLowerCase().includes(q)
+  ))
     .slice(0, 8).map(u => ({ id: u.id, name: u.name, regNo: u.regNo || '', role: u.role, year: u.year || null, type: u.type || null, isActive: u.isActive, discharged: u.discharged || false, pct: readStats(u).pct }));
   const settings = await getSettings();
   const sessions = (await cycleSessions(settings.currentCycle)).filter(s =>

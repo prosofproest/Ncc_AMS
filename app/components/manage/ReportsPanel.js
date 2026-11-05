@@ -16,6 +16,7 @@ export default function ReportsPanel() {
   const [from, setFrom] = useState(today.slice(0, 8) + '01'); const [to, setTo] = useState(today);
   const [cadet, setCadet] = useState(''); const [cq, setCq] = useState(''); const [allCycles, setAllCycles] = useState(false);
   const [year, setYear] = useState(1);
+  const [cYear, setCYear] = useState('all');
   const [aFrom, setAFrom] = useState(''); const [aTo, setATo] = useState('');
   const people = (cadets?.cadets || []).filter(c => c.role === 'cadet' && (!cq.trim() || `${c.name} ${c.regNo || ''}`.toLowerCase().includes(cq.trim().toLowerCase()))).slice(0, 60);
 
@@ -45,6 +46,16 @@ export default function ReportsPanel() {
         <div className="card"><div className="eyebrow">Whole unit summary</div><p className="muted small mt-s">Every cadet with parades, present, absent, benefit credits and percentage.</p><Buttons k="summary" query="type=summary" /></div>
         <div className="card"><div className="eyebrow">Absentees report</div><div className="grid g2 mt-s"><div className="field"><label>From (optional)</label><input type="date" className="input" value={aFrom} onChange={e => setAFrom(e.target.value)} /></div><div className="field"><label>To (optional)</label><input type="date" className="input" value={aTo} onChange={e => setATo(e.target.value)} /></div></div><Buttons k="abs" query={`type=absentees${aFrom ? `&from=${aFrom}` : ''}${aTo ? `&to=${aTo}` : ''}`} /></div>
         <div className="card"><div className="eyebrow">Attendance benefits</div><p className="muted small mt-s">All benefit credits given this cycle.</p><Buttons k="ben" query="type=benefits" formats={[['pdf', 'PDF'], ['xlsx', 'Excel']]} /></div>
+        <div className="card">
+          <div className="eyebrow">Contact details check</div>
+          <p className="muted small mt-s">Review cadet emails, phone numbers and flags. PDF adds columns for physical paper verification.</p>
+          <div className="seg mt-s">
+            {[['all', 'All'], ['1', 'Year 1'], ['2', 'Year 2'], ['3', 'Year 3']].map(([y, l]) => (
+              <button key={y} className={cYear === y ? 'on' : ''} onClick={() => setCYear(y)}>{l}</button>
+            ))}
+          </div>
+          <Buttons k="contacts" query={`type=contacts&year=${cYear}`} formats={[['pdf', 'PDF'], ['xlsx', 'Excel']]} />
+        </div>
       </div>
     </div>
   );

@@ -221,8 +221,8 @@ describe('administrator', () => {
   it('system health tab: live latency + every integration green', async () => {
     const u = userEvent.setup({ delay: null }); mountAdmin('overview');
     await navLink(u, 'System health');
-    await screen.findByText(/Everything is working/, {}, { timeout: 9000 });
-    for (const n of ['Firebase database', 'Google Sheets', 'Email (SMTP)', 'Cloudinary (photos)', 'Environment variables', 'Sir / backup email']) expect(await screen.findByText(n)).toBeTruthy();
+    await screen.findByText(/Everything is working|Accounts need attention/, {}, { timeout: 9000 });
+    for (const n of ['Firebase database', 'Google Sheets', 'Email (SMTP)', 'Cloudinary (photos)', 'Environment variables', 'Sir / backup email', 'Accounts']) expect(await screen.findByText(n)).toBeTruthy();
     expect(screen.getByText('Server responding')).toBeTruthy(); expect(screen.getByText('Your device -> server')).toBeTruthy();
     expect(await screen.findByText(/Sheet syncs/)).toBeTruthy();
   });

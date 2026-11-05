@@ -301,14 +301,14 @@ describe('Data Backup (GET /api/backup & Sunday Cron)', () => {
     expect(sumTotals[4]).toBe(1); // Absent (1 in Y1 + 0 in Y2)
     expect(sumTotals[6]).toBe(1); // Below required (1 in Y1 + 0 in Y2)
 
-    // 7. Raw Cadets sheet: Rank column is deleted, Cycle column filled
+    // 7. Raw Cadets sheet: Rank column is deleted, Cycle column filled, ID is the last column
     const rawCadetsSheet = wb.getWorksheet('Cadets');
     const rawCadetsHeaders = rawCadetsSheet.getRow(1).values.slice(1);
     expect(rawCadetsHeaders).not.toContain('Rank');
     expect(rawCadetsHeaders).toContain('Cycle');
-    expect(rawCadetsHeaders).toContain('ID');
+    expect(rawCadetsHeaders[rawCadetsHeaders.length - 1]).toBe('ID');
     const firstCadetRow = rawCadetsSheet.getRow(2);
-    expect(firstCadetRow.getCell(8).value).toBe('2026-2027'); // Cycle label filled
+    expect(firstCadetRow.getCell(7).value).toBe('2026-2027'); // Cycle label filled
 
     // 8. Sensitive field checks: no field named passwordHash, codeHash, otp, tokenVersion, lockedUntil
     const sensitiveRegex = /passwordHash|codeHash|otp|tokenVersion|lockedUntil/i;
